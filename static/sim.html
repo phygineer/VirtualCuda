@@ -1,0 +1,2145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VirtualCuda Simulation</title>
+<style>
+  :root {
+    --bg: #0d0f12;
+    --panel: #14171c;
+    --panel-2: #1a1e25;
+    --border: #262b34;
+    --text: #e6e8eb;
+    --muted: #8a919c;
+    --faint: #4b525d;
+    --accent: #5eead4;
+    --accent-dim: #134e4a;
+    --pos: #f97316;
+    --neg: #3b82f6;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans);
+    display: grid; grid-template-rows: auto auto auto 1fr auto; overflow: hidden;
+  }
+  body > main { grid-row: 4; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button, select, input[type=text], input[type=number] {
+    font: 13px var(--sans); border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); padding: 6px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: #042f2e; border-color: var(--accent); font-weight: 600; }
+  button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font: 600 15px var(--mono); margin: 0; white-space: nowrap; }
+  header h1 span { color: var(--accent); }
+  header h1 small { color: var(--muted); font-weight: 400; }
+  #prompt { flex: 1; min-width: 200px; }
+  .opt { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .opt input[type=number] { width: 64px; padding: 5px 6px; }
+
+  /* ---------- transport ---------- */
+  .transport {
+    display: flex; align-items: center; gap: 8px; padding: 8px 16px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .transport button { font: 14px var(--mono); padding: 4px 10px; min-width: 36px; }
+  .transport #play { min-width: 76px; }
+  #where { font: 12px var(--mono); color: var(--text); min-width: 220px; }
+  #where b { color: var(--accent); font-weight: 600; }
+  .scrub { flex: 1; min-width: 160px; position: relative; height: 18px; display: flex; align-items: center; }
+  #scrubber { width: 100%; accent-color: var(--accent); }
+  #buffer { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+  .opts { position: relative; }
+  .opts summary { list-style: none; cursor: pointer; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--muted); }
+  .opts summary::-webkit-details-marker { display: none; }
+  .opts[open] summary { border-color: var(--accent); color: var(--text); }
+  .opts-pop {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; display: grid; gap: 8px; padding: 10px 12px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .opts-pop .opt { justify-content: space-between; }
+
+  /* ---------- main grid ---------- */
+  main { display: grid; grid-template-columns: var(--c1, 250px) 5px var(--c2, 320px) 5px minmax(0, 1fr); min-height: 0; }
+  .col { min-height: 0; overflow-y: auto; border-right: 1px solid var(--border); }
+  .col:last-child { border-right: none; }
+  .col h2 {
+    position: sticky; top: 0; z-index: 1; margin: 0; padding: 6px 8px 6px 14px; display: flex; align-items: center; gap: 6px;
+    font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+    background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+
+  /* resizable, collapsible, maximizable panels */
+  .col h2 .ttl { flex: 1; cursor: default; }
+  .pctl { display: inline-flex; gap: 2px; }
+  .pctl button { font: 12px var(--mono); padding: 1px 7px; min-width: 0; background: transparent; border-color: transparent; color: var(--muted); }
+  .pctl button:hover { border-color: var(--border); color: var(--text); }
+  .split { cursor: col-resize; background: var(--border); transition: background .15s; touch-action: none; }
+  .split:hover, .split.drag, .hsplit:hover, .hsplit.drag { background: var(--accent-dim); }
+  .hsplit { height: 5px; margin-top: -1px; cursor: row-resize; background: var(--border); touch-action: none; }
+  .col { border-right: none; }
+  .col.folded > :not(h2) { display: none; }
+  .col.folded { overflow: hidden; }
+  .col.folded h2 { flex-direction: column-reverse; height: 100%; padding: 8px 0; border-bottom: none; justify-content: flex-end; }
+  .col.folded h2 .ttl { writing-mode: vertical-rl; flex: 0; padding-top: 8px; cursor: pointer; }
+  .col.folded h2 .pctl { flex-direction: column; }
+  body[data-max] main { grid-template-columns: minmax(0, 1fr) !important; }
+  body[data-max] main > .split { display: none; }
+  body[data-max="seq"] main > .col:not(#colSeq), body[data-max="pipe"] main > .col:not(#colPipe),
+  body[data-max="insp"] main > .col:not(#colInsp) { display: none; }
+  body[data-max]:not([data-max="ho"]) #handoff { display: none; }
+  body[data-max="ho"] main { display: none; }
+  body[data-max="ho"] #handoff { grid-row: 4 / 6; height: auto !important; min-height: 0; }
+  body[data-max="ho"] #handoff .hsplit { display: none; }
+  body[data-max="insp"] #insp { max-width: none; }
+  body[data-max="pipe"] .row { height: 26px; font-size: 13px; }
+  #handoff { display: flex; flex-direction: column; height: var(--hoH, auto); }
+  #handoff > .ho-slides, #handoff > .ho-tiles { flex: 1; min-height: 0; }
+  #handoff.sized .ho-tiles, body[data-max="ho"] .ho-tiles { max-height: none; }
+  .ho-slide { flex-basis: calc(var(--slideH, 132px) * 1.18 + 12px) !important; }
+  .ho-slide canvas { height: var(--slideH, 132px) !important; }
+  #handoff.folded > .ho-slides, #handoff.folded > .ho-tiles { display: none; }
+
+  /* inspector cards: fold by clicking the title, ⤢ opens the zoom view */
+  .card > h4.fold { cursor: pointer; user-select: none; justify-content: flex-start; align-items: baseline; }
+  .card > h4.fold > span { margin-left: auto; }
+  .card > h4.fold > span ~ .zbtn { margin-left: 0; }
+  .card > h4.fold::before { content: "▾"; color: var(--faint); margin-right: -2px; font-weight: 400; }
+  .card.folded > h4.fold::before { content: "▸"; }
+  .card.folded > :not(h4) { display: none; }
+  .card.folded > h4 { margin-bottom: 0; }
+  .card > h4 .zbtn { margin-left: auto; font: 11px var(--mono); padding: 0 6px; background: transparent; border-color: transparent; color: var(--faint); }
+  .card > h4 .zbtn:hover { color: var(--accent); border-color: var(--border); }
+  .card.zghost { color: var(--faint); font: 11px var(--mono); border-style: dashed; }
+  #zoom { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.72); display: flex; padding: 3vh 3vw; }
+  #zoom[hidden] { display: none; }
+  .zbox { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .zhead { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); font: 12px var(--mono); color: var(--muted); }
+  .zhead b { color: var(--text); }
+  .zhead .grow { flex: 1; }
+  .zhead button { font: 12px var(--mono); padding: 3px 9px; }
+  #zPct { min-width: 44px; text-align: center; }
+  .zbody { flex: 1; overflow: auto; padding: 16px; }
+  .zwrap { margin: 0 auto; position: relative; }
+  .zwrap > .card { position: absolute; left: 0; top: 0; margin: 0; transform-origin: 0 0; transform: scale(var(--z, 1)); }
+  .zwrap > .card > h4 .zbtn { display: none; }
+
+  /* sequence */
+  #seq { padding: 12px; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
+  .tok {
+    display: inline-flex; flex-direction: column; align-items: center; padding: 2px 5px;
+    border: 1px solid var(--border); border-radius: 4px; background: var(--panel); min-width: 22px;
+  }
+  .tok .p { font: 12px var(--mono); white-space: pre; }
+  .tok .i { font: 9px var(--mono); color: var(--muted); }
+  .tok.special { border-style: dashed; }
+  .tok.special .p { color: var(--muted); }
+  .tok.gen { border-color: var(--accent-dim); }
+  .tok.gen .p { color: var(--accent); }
+  .tok.active { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn), 0 0 10px rgba(251,191,36,.35); }
+  .tok.fresh { animation: pop .6s ease-out; }
+  @keyframes pop { 0% { transform: scale(1.6); background: var(--accent-dim); } 100% { transform: scale(1); } }
+  #seqText { padding: 0 14px 14px; color: var(--muted); white-space: pre-wrap; font-size: 13px; }
+  #seqText b { color: var(--text); font-weight: 400; }
+
+  /* tower */
+  #tower { padding: 8px 10px 16px; }
+  .row {
+    display: grid; grid-template-columns: 54px 1fr 92px; align-items: center; gap: 8px;
+    padding: 2px 6px; border-radius: 4px; border: 1px solid transparent; cursor: pointer;
+    font: 11px var(--mono); color: var(--faint); height: 21px;
+  }
+
+  /* ---------- hand-off: one slide per token, shown once playback completes ---------- */
+  #handoff { grid-row: 5; border-top: 1px solid var(--border); background: var(--panel); min-width: 0; }
+  #handoff.hidden { display: none; }
+  .ho-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px; font: 12px var(--mono); color: var(--muted); flex-wrap: wrap; }
+  .ho-head b { color: var(--text); font-weight: 600; }
+  .ho-head .tokbox { color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 4px; padding: 1px 6px; white-space: pre; }
+  .ho-head button { font: 11px var(--mono); padding: 3px 9px; }
+  .ho-head .grow { flex: 1; }
+  /* grouped: a slide per token, its whole pass as one image (rows = stages, top to bottom) */
+  .ho-slides { display: flex; gap: 12px; overflow-x: auto; padding: 4px 16px 14px; scroll-behavior: smooth; }
+  .ho-slides[hidden], .ho-tiles[hidden] { display: none; }
+  .ho-slide {
+    flex: 0 0 168px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px;
+    cursor: pointer; transition: opacity .3s, border-color .3s, box-shadow .3s, transform .3s;
+  }
+  .ho-slide:hover { border-color: var(--muted); transform: translateY(-2px); }
+  .ho-slide.ahead { opacity: .3; }
+  .ho-slide.now { border-color: var(--warn); box-shadow: 0 0 14px rgba(251,191,36,.3); }
+  .ho-slide .frame { position: relative; }
+  .ho-slide canvas { width: 100%; height: 132px; image-rendering: pixelated; display: block; border-radius: 4px; }
+  .ho-slide .scan { position: absolute; left: -3px; right: -3px; border: 1px solid var(--warn); border-radius: 2px; box-shadow: 0 0 8px rgba(251,191,36,.6); pointer-events: none; transition: top .08s linear; }
+  .ho-slide .cap { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin-top: 5px; font: 11px var(--mono); color: var(--faint); }
+  .ho-slide .cap b { color: var(--accent); font-weight: 400; font-size: 13px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  /* opened: one tile per stage of a single token */
+  .ho-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; padding: 4px 16px 14px; max-height: 36vh; overflow-y: auto; }
+  .ho-tilehead { grid-column: 1 / -1; font: 12px var(--mono); color: var(--muted); }
+  .ho-tilehead b { color: var(--text); font-weight: 600; }
+  .ho-node {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+    cursor: pointer; opacity: .25; transition: opacity .25s, border-color .25s, box-shadow .25s;
+  }
+  .ho-node.lit { opacity: 1; }
+  .ho-node.now { border-color: var(--warn); box-shadow: 0 0 10px rgba(251,191,36,.35); }
+  .ho-node:hover { border-color: var(--muted); }
+  .ho-node .t { display: flex; justify-content: space-between; font: 600 11px var(--mono); color: var(--text); margin-bottom: 4px; }
+  .ho-node .t span { font-weight: 400; color: var(--faint); }
+  .ho-node canvas { width: 100%; image-rendering: pixelated; display: block; border-radius: 2px; }
+  .ho-node .s { font: 10px var(--mono); color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; gap: 6px; }
+  .ho-node .s b { color: var(--text); font-weight: 400; }
+  .ho-node .lens { text-align: left; font: 10px var(--mono); margin-top: 2px; }
+  .ho-node.out { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; }
+  .ho-node.out .bigtok { font: 15px var(--mono); color: var(--accent); white-space: pre; }
+  .row:hover { background: var(--panel); }
+  .row.done { color: var(--muted); }
+  .row.active { color: var(--text); border-color: var(--warn); background: rgba(251,191,36,.07); }
+  .row.block { height: 26px; margin: 3px 0; }
+  .row.block .name { color: inherit; }
+  .bars { display: grid; grid-auto-rows: 3px; gap: 2px; }
+  .bars i { display: block; height: 3px; border-radius: 2px; width: 0; transition: width .25s; }
+  .bars i.r { background: var(--faint); }
+  .bars i.a { background: var(--neg); }
+  .bars i.m { background: var(--pos); }
+  .bars i.p { background: #c084fc; }
+  .row .kind { font-size: 9px; color: var(--faint); margin-left: 2px; }
+  .lens { overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--accent); text-align: right; }
+  .row:not(.done):not(.active) .lens { visibility: hidden; }
+  .sub { font-size: 9px; color: var(--warn); }
+  .legend { display: flex; gap: 10px; padding: 8px 16px 0; font: 10px var(--mono); color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+
+  /* inspector */
+  #insp { padding: 16px 20px 40px; max-width: 980px; }
+  #insp h3 { font: 600 18px var(--sans); margin: 0 0 4px; }
+  #insp h3 .tag { font: 12px var(--mono); color: var(--warn); margin-left: 8px; vertical-align: middle; }
+  .what { color: var(--muted); margin: 0 0 16px; max-width: 72ch; cursor: pointer;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .what.open { display: block; cursor: auto; }
+  details.more { margin-top: 4px; }
+  details.more > summary { cursor: pointer; font: 11px var(--mono); color: var(--muted); padding: 6px 0; list-style: none; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: "▸ "; }
+  details.more[open] > summary::before { content: "▾ "; }
+  .what code, .card code { font: 12px var(--mono); color: var(--text); background: var(--panel-2); padding: 1px 4px; border-radius: 3px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+  .card h4 { margin: 0 0 8px; font: 600 12px var(--mono); color: var(--text); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .card h4 span { color: var(--muted); font-weight: 400; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid2 > .card, .grid3 > .card { margin-bottom: 0; }
+  .stack { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+  canvas.heat { width: 100%; image-rendering: pixelated; display: block; border-radius: 3px; cursor: crosshair; }
+  canvas.chart { width: 100%; display: block; cursor: crosshair; }
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted); margin-top: 6px; }
+  .stats b { color: var(--text); font-weight: 400; }
+  .op { text-align: center; font: 16px var(--mono); color: var(--muted); align-self: center; }
+  .bigtok { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font: 15px var(--mono); }
+  .bigtok .box { border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; color: var(--accent); white-space: pre; }
+  .bigtok .arrow { color: var(--muted); }
+  .bigtok .num { color: var(--warn); }
+  pre.tmpl { font: 12px var(--mono); white-space: pre-wrap; margin: 0; color: var(--muted); }
+  pre.tmpl b { color: var(--text); font-weight: 400; }
+  .toks { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  table.cands { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+  table.cands td { padding: 3px 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.cands td.t { white-space: pre; color: var(--text); }
+  table.cands td.n { text-align: right; color: var(--muted); }
+  table.cands tr.chosen td { background: rgba(94,234,212,.08); }
+  table.cands tr.chosen td.t { color: var(--accent); }
+  table.cands tr.cut td { opacity: .45; }
+  .bar { height: 8px; border-radius: 2px; background: var(--accent); min-width: 1px; }
+  .bar.raw { background: var(--faint); }
+  .bar.logit { background: var(--neg); }
+  .barcell { width: 40%; }
+
+  .neurons { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 2px 12px; font: 11px var(--mono); }
+  .neurons span { color: var(--muted); }
+  .neurons .p { color: var(--pos); } .neurons .n { color: var(--neg); }
+  .chiprow { display: flex; gap: 6px; flex-wrap: wrap; font: 12px var(--mono); }
+  .chiprow .c { border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; white-space: pre; }
+  .chiprow .c span { color: var(--muted); margin-left: 6px; }
+  .meter { height: 10px; background: var(--panel-2); border-radius: 5px; overflow: hidden; display: flex; }
+  .meter i { display: block; height: 100%; }
+
+  .empty { padding: 15vh 24px; text-align: center; color: var(--muted); }
+  .empty b { color: var(--text); }
+
+  #tip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: #000; color: var(--text); border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; font: 11px var(--mono); white-space: pre;
+  }
+
+  /* sessions / turns */
+  #source { max-width: 340px; }
+  .live { display: flex; align-items: center; gap: 10px; flex: 1; flex-wrap: wrap; }
+  .live.hidden, .turns.hidden { display: none; }
+  #modelTag { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+  #help { font: 600 13px var(--mono); padding: 4px 9px; color: var(--muted); background: transparent; }
+  #help:hover { color: var(--accent); border-color: var(--accent-dim); }
+  .turns {
+    display: flex; align-items: center; gap: 6px; padding: 8px 16px; overflow-x: auto;
+    border-bottom: 1px solid var(--border); background: var(--bg);
+  }
+  .turns .lbl { font: 11px var(--mono); color: var(--muted); white-space: nowrap; margin-right: 4px; }
+  .turn {
+    font: 12px var(--mono); white-space: nowrap; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted); cursor: pointer;
+  }
+  .turn:hover { border-color: var(--muted); }
+  .turn.active { border-color: var(--warn); color: var(--text); background: rgba(251,191,36,.08); }
+  .turn .tc { color: var(--seg-call); }
+  .turns .arrow { color: var(--faint); font-size: 11px; }
+  .turns label { margin-left: auto; font: 11px var(--mono); color: var(--muted); white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+
+  /* segments of the context window */
+  :root { --seg-system: #6b7280; --seg-tools: #d97706; --seg-user: #60a5fa; --seg-assistant: #5eead4; --seg-call: #a78bfa; --seg-result: #e879f9;
+          --seg-image: #22d3ee; --seg-audio: #a3e635; }
+  .tok.mediarun { border-color: var(--segc); }
+  .tok.mediarun .p { color: var(--segc); }
+
+  /* media (image / audio) stages */
+  .mediaview { position: relative; display: inline-block; max-width: 100%; }
+  .mediaview img { display: block; max-width: 100%; max-height: 360px; border-radius: 4px; image-rendering: auto; }
+  .mediaview canvas.over { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: auto; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+  .tile { cursor: pointer; border: 1px solid var(--border); border-radius: 5px; padding: 4px; background: var(--bg); }
+  .tile.sel { border-color: var(--warn); }
+  .tile canvas { width: 100%; image-rendering: pixelated; display: block; border-radius: 2px; }
+  .tile div { font: 10px var(--mono); color: var(--muted); text-align: center; margin-top: 3px; }
+  .bigmap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+  .bigmap canvas { width: 100%; image-rendering: pixelated; border-radius: 3px; display: block; }
+  .bigmap .cap { font: 11px var(--mono); color: var(--muted); margin-top: 4px; }
+  .seg-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+  .seg-btns button { font: 11px var(--mono); padding: 2px 8px; }
+  .seg-btns button.on { border-color: var(--accent); color: var(--accent); }
+  .strips canvas { width: 100%; height: 14px; image-rendering: pixelated; display: block; }
+  .strips .srow { display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: center; margin-bottom: 3px; font: 10px var(--mono); color: var(--muted); }
+  canvas.wave, canvas.mel { width: 100%; display: block; border-radius: 3px; }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 12px var(--mono); color: var(--muted); margin: 4px 0 14px; }
+  .flow b { color: var(--text); font-weight: 400; border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; background: var(--panel); }
+  .layertag { font: 10px var(--mono); padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+  .tok[data-seg] { box-shadow: inset 0 -2px 0 var(--segc); }
+  .tok.carried { opacity: .4; }
+  .seglegend { display: flex; gap: 10px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted); margin: 8px 0; }
+  .seglegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  .ctxbar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 6px 0 2px; background: var(--panel-2); }
+  .ctxbar i { display: block; height: 100%; }
+
+  /* 3D space panel under the inspector */
+  #colInsp { display: flex; flex-direction: column; overflow: hidden; }
+  #inspScroll { flex: 1; min-height: 0; overflow-y: auto; }
+  #space { flex: none; height: var(--spH, 360px); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+  #space.folded { height: auto; }
+  #space.folded > :not(.sp-head):not(.hsplit) { display: none; }
+  #space.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
+  .sp-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font: 12px var(--mono); color: var(--muted); flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+  .sp-head b { color: var(--text); font-weight: 600; }
+  .sp-head button { font: 11px var(--mono); padding: 3px 9px; }
+  .sp-head .grow { flex: 1; }
+  .sp-head .opt { font-size: 11px; }
+  #spInfo { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #spBanner { display: flex; align-items: center; gap: 8px; padding: 4px 12px; font: 11px var(--mono); color: var(--warn); background: rgba(251,191,36,.06); }
+  #spBanner[hidden] { display: none; }
+  #spBanner b { color: var(--text); font-weight: 400; }
+  #spBanner span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #spBanner button { font: 11px var(--mono); padding: 1px 8px; }
+  .sp-view { position: relative; flex: 1; min-height: 0; }
+  .sp-view canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+  .sp-view canvas:active { cursor: grabbing; }
+  .sp-legend { position: absolute; left: 10px; right: 10px; bottom: 6px; font: 10px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body[data-max="sp"] .sp-legend { white-space: normal; }
+  .sp-stats { position: absolute; left: 10px; top: 8px; max-width: calc(100% - 20px); font: 10px var(--mono); color: var(--muted); background: rgba(13,15,18,.72); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; pointer-events: auto; }
+  .sp-stats[hidden] { display: none; }
+  .sp-stats div { display: flex; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.55; }
+  .sp-stats span { width: 92px; flex: none; color: var(--faint, #4b525d); }
+  .sp-stats b { color: var(--text); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+  .sp-style { position: absolute; right: 8px; top: 8px; width: 300px; max-width: calc(100% - 16px); max-height: calc(100% - 16px); overflow-y: auto; font: 11px var(--mono); color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 2; }
+  .sp-style[hidden] { display: none; }
+  .sp-style .row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .sp-style .row[hidden] { display: none; }
+  .sp-style .row > span:first-child { width: 88px; flex: none; }
+  .sp-style .row.end { justify-content: flex-end; }
+  .sp-style select, .sp-style input[type=number] { font: 11px var(--mono); background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; }
+  .sp-style input[type=number] { width: 48px; }
+  .sp-style input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .sp-style input[type=color] { width: 20px; height: 18px; padding: 0; border: 1px solid var(--border); border-radius: 3px; background: none; cursor: pointer; }
+  .sp-style .cols { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .sp-style .cols label { display: inline-flex; align-items: center; gap: 3px; }
+  .sp-style label { display: inline-flex; align-items: center; gap: 4px; }
+  .swatches { display: flex; gap: 5px; flex-wrap: wrap; }
+  .swatches button { width: 30px; height: 14px; padding: 0; min-width: 0; border-radius: 3px; border: 1px solid var(--border); cursor: pointer; }
+  .swatches button.on { outline: 2px solid var(--text); outline-offset: 1px; }
+  #spStyleBtn.on { border-color: var(--accent); color: var(--accent); }
+  .sp-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--muted); pointer-events: none; }
+  .sp-empty[hidden] { display: none; }
+  .sp-foot { display: flex; align-items: center; gap: 10px; padding: 4px 12px 8px; font: 11px var(--mono); color: var(--muted); }
+  .sp-foot input { flex: 1; accent-color: var(--accent); }
+  .sp-foot b { color: var(--accent); font-weight: 400; }
+  #spTokLbl { white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+  body[data-max="sp"] main > .col:not(#colInsp) { display: none; }
+  body[data-max="sp"] #inspScroll, body[data-max="sp"] #colInsp > h2, body[data-max="sp"] #space > .hsplit { display: none; }
+  body[data-max="sp"] #space { flex: 1; height: auto; }
+
+  @media (max-width: 1100px) {
+    main { --c1: 220px; --c2: 280px; }
+    .grid3 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 820px) {
+    body { overflow: auto; display: block; }
+    main { display: flex; flex-direction: column; }
+    .col { border-right: none; border-bottom: 1px solid var(--border); overflow: visible; }
+    .grid2 { grid-template-columns: 1fr; }
+    #where { min-width: 0; width: 100%; }
+    .split, .hsplit, .pctl { display: none; }
+    #colInsp, #inspScroll { overflow: visible; }
+    #space { height: 420px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="/" style="color:inherit">Virtual<span>Cuda</span></a> <small>/ simulation</small></h1>
+  <a href="/" id="chatLink" title="Back to the chat">← chat</a>
+  <select id="source" title="Replay a recorded conversation, or try a fresh prompt">
+    <option value="">✎ New prompt (live sampling)</option>
+  </select>
+  <span class="live" id="liveCtl">
+    <input type="text" id="prompt" value="What is the capital of France?" placeholder="Prompt to simulate">
+    <details class="opts"><summary title="Sampling options">⚙</summary><div class="opts-pop">
+      <label class="opt"><input type="checkbox" id="chatTmpl" checked> chat template</label>
+      <label class="opt">temperature <input type="number" id="temp" value="0.7" min="0" max="2" step="0.1"></label>
+      <label class="opt">max tokens <input type="number" id="maxTok" value="32" min="1" max="256" step="1"></label>
+    </div></details>
+    <button class="primary" id="run">Run</button>
+  </span>
+  <span id="modelTag"></span>
+  <button id="help" title="Supported models: what the simulator can show, and for which models">?</button>
+</header>
+
+<div class="transport">
+  <button id="prevStage" title="Previous stage (←) · previous token (Shift+←)">◀</button>
+  <button id="play" title="Play / pause (Space)">▶ Play</button>
+  <button id="nextStage" title="Next stage (→) · next token (Shift+→)">▶|</button>
+  <select id="speed" title="Playback speed">
+    <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1">1×</option>
+    <option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+    <option value="16">16×</option><option value="32">32×</option><option value="64">64×</option><option value="0" selected>Instant</option>
+  </select>
+  <div id="where">idle</div>
+  <div class="scrub"><input type="range" id="scrubber" min="0" max="0" value="0" disabled></div>
+  <span id="buffer"></span>
+  <button id="hoOpen" title="Show the hand-off pass" hidden>⇢ hand-off</button>
+</div>
+
+<div class="turns hidden" id="turns"></div>
+
+<main>
+  <section class="col" id="colSeq">
+    <h2><span class="ttl">Sequence</span><span class="pctl"><button data-fold="seq" title="Collapse / expand">–</button><button data-max="seq" title="Maximize (Esc to restore)">⤢</button></span></h2>
+    <div id="seq"></div>
+    <div id="seqText"></div>
+  </section>
+  <div class="split" data-split="c1" title="Drag to resize · double-click to reset"></div>
+  <section class="col" id="colPipe">
+    <h2><span class="ttl">Pipeline</span><span class="pctl"><button data-fold="pipe" title="Collapse / expand">–</button><button data-max="pipe" title="Maximize (Esc to restore)">⤢</button></span></h2>
+    <div class="legend"><span><i style="background:var(--faint)"></i>|residual|</span><span><i style="background:var(--neg)"></i>|attn|</span><span><i style="background:var(--pos)"></i>|mlp|</span><span style="margin-left:auto">logit lens</span></div>
+    <div id="tower"></div>
+  </section>
+  <div class="split" data-split="c2" title="Drag to resize · double-click to reset"></div>
+  <section class="col" id="colInsp">
+    <h2><span class="ttl">Inspector</span><span class="pctl"><button data-max="insp" title="Maximize (Esc to restore)">⤢</button></span></h2>
+    <div id="inspScroll"><div id="insp"><div class="empty">Type a prompt and press <b>Run</b>.<br><br>
+      The model runs for real on the server. Every number you'll see is captured from the actual forward pass:
+      token ids, embeddings, every layer's residual stream, attention weights, MLP neurons, logits, and the sampling decision.</div></div></div>
+    <section id="space" aria-label="3D views">
+      <div class="hsplit" data-split="sp" title="Drag to resize · double-click to reset"></div>
+      <div class="sp-head">
+        <b>3D</b>
+        <span class="seg-btns"><button data-mode="brain" title="Which MLP neurons fire, per layer, per token">Brain</button><button data-mode="journey" title="Each token's hidden state through the layers, in PCA space">Journey</button></span>
+        <span id="spInfo"></span>
+        <span class="grow"></span>
+        <label class="opt"><input type="checkbox" id="spSpin"> spin</label>
+        <button id="spStyleBtn" title="Colors, trails and insights">🎨 style</button>
+        <button id="spHome" title="Reset the camera">⌂</button>
+        <button id="spImport" title="Open a journey .json or .png (or drop it on this panel)">Import</button>
+        <button id="spExportJson" title="Save the journey data as JSON">⇩ JSON</button>
+        <button id="spExportPng" title="Save this view as PNG, with the journey data embedded so it can be imported again">⇩ PNG</button>
+        <span class="pctl"><button data-fold="sp" title="Collapse / expand">–</button><button data-max="sp" title="Maximize (Esc to restore)">⤢</button></span>
+      </div>
+      <div id="spBanner" hidden><span id="spBannerText"></span><button id="spBannerClose" title="Back to the live trace">× close</button></div>
+      <div class="sp-view" id="spView"><canvas></canvas><div class="sp-stats" id="spStats" hidden></div><div class="sp-legend" id="spLegend"></div><div class="sp-empty" id="spEmpty"></div>
+        <div class="sp-style" id="spStyle" hidden>
+          <div class="row"><span>palette</span><span class="swatches" id="spPresets"></span></div>
+          <div class="row"><span>colors</span><span class="cols">
+            <label title="positive activation">+<input type="color" data-k="pos"></label>
+            <label title="negative activation">−<input type="color" data-k="neg"></label>
+            <label title="path: embedding → middle → last layer">path<input type="color" data-k="p0"><input type="color" data-k="p1"><input type="color" data-k="p2"></label>
+            <label title="background">bg<input type="color" data-k="bg"></label></span></div>
+          <div class="row"><span>brain color</span><select data-k="brainBy"><option value="sign">sign (+ / −)</option><option value="layer">layer</option><option value="token">token</option></select></div>
+          <div class="row"><span>journey color</span><select data-k="journeyBy"><option value="layer">layer</option><option value="token">token</option></select></div>
+          <div class="row"><span>past tokens</span><select data-k="trail"><option value="fade">fade out</option><option value="all">keep all (persist)</option><option value="last">keep last N</option><option value="current">current only</option></select>
+            <input type="number" id="spTrailN" data-k="trailN" min="1" max="99" title="how many past tokens to keep"></div>
+          <div class="row" id="spFadeRow"><span>fade length</span><input type="range" data-k="fadeLen" min="0.5" max="12" step="0.5" title="tokens until a past token is mostly faded"></div>
+          <div class="row"><span>lines</span><label><input type="checkbox" data-k="lines"> show</label><input type="range" data-k="lineAlpha" min="0.1" max="1" step="0.05" title="line brightness"></div>
+          <div class="row"><span>spark size</span><input type="range" data-k="size" min="0.4" max="2.5" step="0.1"></div>
+          <div class="row"><span>insights</span><label><input type="checkbox" data-k="stats"> show stats overlay</label></div>
+          <div class="row end"><button id="spStyleReset">reset to default</button></div>
+        </div></div>
+      <div class="sp-foot"><span>token</span><input type="range" id="spTok" min="0" max="0" value="0" disabled><span id="spTokLbl"></span></div>
+      <input type="file" id="spFile" accept=".json,.png,application/json,image/png" hidden>
+    </section>
+  </section>
+</main>
+
+<section id="handoff" class="hidden" aria-label="Layer hand-off">
+  <div class="hsplit" data-split="ho" title="Drag to resize · double-click to reset"></div>
+  <div class="ho-head">
+    <button id="hoBack" title="Back to all tokens" hidden>← all tokens</button>
+    <b>Hand-off</b><span id="hoHint">one slide per token: rows = embedding → each layer → final norm · click a slide to see its layers</span>
+    <span class="grow"></span>
+    <button id="hoPlay" title="Play the hand-off, token by token">▶ Play</button>
+    <span class="pctl"><button data-fold="ho" title="Collapse / expand">–</button><button data-max="ho" title="Maximize (Esc to restore)">⤢</button></span>
+    <button id="hoClose" title="Hide">×</button>
+  </div>
+  <div class="ho-slides" id="hoSlides"></div>
+  <div class="ho-tiles" id="hoTiles" hidden></div>
+</section>
+
+<div id="tip"></div>
+
+<div id="zoom" hidden>
+  <div class="zbox">
+    <div class="zhead">
+      <b id="zTitle"></b><span id="zNote"></span><span class="grow"></span>
+      <button id="zOut" title="Zoom out (Ctrl/⌘ + wheel)">−</button><span id="zPct">100%</span><button id="zIn" title="Zoom in (Ctrl/⌘ + wheel)">+</button>
+      <button id="zFit" title="Fit to window">fit</button>
+      <button id="zClose" title="Close (Esc)">×</button>
+    </div>
+    <div class="zbody" id="zBody"></div>
+  </div>
+</div>
+
+<script type="importmap">{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+<script src="/static/docs.js"></script>
+<script src="/static/livereload.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------- state
+let meta = null;          // tokenization + model shape
+let steps = [];           // one entry per forward pass, from /api/trace
+let streamDone = true;
+let controller = null;
+let gi = 0;               // global cursor over every stage of every step
+let playing = false;
+let lastShownGi = -1;
+let STAGES0 = [];         // stages of step 0 (includes one stage per image / audio clip)
+let STAGESN = [];         // stages of every later step (encoders already ran; their output is cached)
+let session = null;       // recorded conversation being replayed (from /api/sessions/{id})
+let currentGen = null;    // which of its generations is loaded
+let segs = [];            // per prompt token: which part of the context it belongs to
+const decoded = new Map(); // lazy float16 decode cache
+const summaries = new Map();
+
+// ---------------------------------------------------------------- float16
+const F16 = (() => {
+  const t = new Float32Array(65536);
+  for (let h = 0; h < 65536; h++) {
+    const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 0x1f, f = h & 0x3ff;
+    t[h] = e === 0 ? s * 2 ** -14 * (f / 1024)
+         : e === 31 ? (f ? NaN : s * Infinity)
+         : s * 2 ** (e - 15) * (1 + f / 1024);
+  }
+  return t;
+})();
+
+function f16(b64) {
+  const bin = atob(b64);
+  const out = new Float32Array(bin.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = F16[bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8)];
+  return out;
+}
+
+function vec(step, layer, field) {
+  const key = `${step}:${layer}:${field}`;
+  if (!decoded.has(key)) {
+    const s = steps[step];
+    decoded.set(key, f16(layer == null ? s[field] : s.layers[layer][field]));
+  }
+  return decoded.get(key);
+}
+
+const add = (a, b) => a.map((x, i) => x + b[i]);
+// A layer's real output, as captured: the next layer's input (or the last layer's output).
+const residOut = (step, L) => (L + 1 < meta.layers ? vec(step, L + 1, "resid_in") : vec(step, null, "final_resid"));
+const norm = (v) => Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+
+function stats(v) {
+  let sum = 0, sq = 0, min = Infinity, max = -Infinity;
+  for (const x of v) { sum += x; sq += x * x; if (x < min) min = x; if (x > max) max = x; }
+  const mean = sum / v.length;
+  const top = [...v.keys()].sort((a, b) => Math.abs(v[b]) - Math.abs(v[a])).slice(0, 3);
+  return { norm: Math.sqrt(sq), mean, std: Math.sqrt(sq / v.length - mean * mean), min, max, top };
+}
+
+// Per-step norms for the tower bars.
+function summary(s) {
+  if (!summaries.has(s)) {
+    const L = meta.layers, r = [], a = [], m = [], p = [];
+    for (let i = 0; i < L; i++) {
+      r.push(norm(vec(s, i, "resid_in")));
+      a.push(norm(vec(s, i, "attn_out")));
+      m.push(norm(vec(s, i, "mlp_out")));
+      p.push(meta.ple ? norm(vec(s, i, "ple_out")) : 0);
+    }
+    const lg = (x) => Math.log1p(x);
+    const maxR = Math.max(...r.map(lg)), maxAM = Math.max(...a.map(lg), ...m.map(lg), ...p.map(lg));
+    const w = (xs) => xs.map((x) => lg(x) / maxAM);
+    summaries.set(s, { r, a, m, p, rw: r.map((x) => lg(x) / maxR), aw: w(a), mw: w(m), pw: w(p) });
+  }
+  return summaries.get(s);
+}
+
+// ---------------------------------------------------------------- stages
+// Each stage has a key; tower rows are keyed the same way ("L3" groups a layer's sub-stages).
+function mediaRuns(tokens) {
+  const ids = Object.entries(meta.media_tokens ?? {}), runs = [];
+  tokens.forEach((t, i) => {
+    const kind = ids.find(([, id]) => id === t.id)?.[0];
+    if (!kind) return;
+    const last = runs[runs.length - 1];
+    if (last && last.kind === kind && last.end === i - 1) last.end = i;
+    else runs.push({ kind, start: i, end: i });
+  });
+  return runs;
+}
+
+function buildStages(withMedia) {
+  const s = [{ kind: "input", key: "input" }];
+  if (withMedia) mediaRuns(meta.tokens).forEach((r, i) => s.push({ kind: "media", key: `media:${i}`, index: i, media: r.kind }));
+  s.push({ kind: "embed", key: "embed" });
+  for (let i = 0; i < meta.layers; i++) {
+    s.push({ kind: "attn", layer: i, key: `L${i}` }, { kind: "mlp", layer: i, key: `L${i}` });
+    if (meta.ple) s.push({ kind: "ple", layer: i, key: `L${i}` });
+  }
+  s.push({ kind: "norm", key: "norm" }, { kind: "head", key: "head" }, { kind: "sample", key: "sample" });
+  return s;
+}
+const stagesOf = (step) => (step === 0 ? STAGES0 : STAGESN);
+const startOf = (step) => (step === 0 ? 0 : STAGES0.length + (step - 1) * STAGESN.length);
+const total = () => (steps.length ? STAGES0.length + (steps.length - 1) * STAGESN.length : 0);
+function cur() {
+  let step, stage;
+  if (gi < STAGES0.length) { step = 0; stage = gi; }
+  else { step = 1 + Math.floor((gi - STAGES0.length) / STAGESN.length); stage = (gi - STAGES0.length) % STAGESN.length; }
+  return { step, stage, ...stagesOf(step)[stage] };
+}
+const isLast = (c) => c.stage === stagesOf(c.step).length - 1;
+
+function stageMs(c) {
+  const base = { input: c.step === 0 ? 2600 : 1400, media: 5200, embed: 1100, attn: 520, mlp: 520, ple: 420, norm: 900, head: 1100, sample: 1700 };
+  const speed = +$("speed").value;
+  return speed ? base[c.kind] / speed : 0;  // Instant: follow the stream, like the chat reply
+}
+
+// ---------------------------------------------------------------- helpers
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const vis = (s) => esc(s.replace(/ /g, "·").replace(/\n/g, "↵").replace(/\t/g, "⇥"));
+const isSpecial = (t) => /^<\|.*\|>$/.test(t.text);
+const fmt = (x, d = 3) => (Math.abs(x) >= 1000 ? x.toFixed(0) : Math.abs(x) >= 100 ? x.toFixed(1) : x.toFixed(d));
+const pct = (p) => (p * 100 >= 10 ? (p * 100).toFixed(1) : (p * 100).toFixed(2)) + "%";
+
+function tokenAtPos(pos) {
+  const P = meta.tokens.length;
+  return pos < P ? meta.tokens[pos] : steps[pos - P].chosen;
+}
+
+function tokChip(t, cls = "", seg = null) {
+  const segAttr = seg ? ` data-seg="${seg}" style="--segc:var(--seg-${SEG_VAR[seg]})"` : "";
+  return `<span class="tok ${isSpecial(t) ? "special" : ""} ${cls}"${segAttr}><span class="p">${vis(t.text) || "&nbsp;"}</span><span class="i">${t.id}</span></span>`;
+}
+
+// ---------------------------------------------------------------- context segments
+// Label each prompt token with the part of the conversation it came from, by scanning the
+// rendered template for the common chat formats (ChatML/Qwen, Llama 3, Gemma) and the
+// <tools>, <tool_call>, <tool_response> conventions.
+const SEG_VAR = { system: "system", tools: "tools", user: "user", assistant: "assistant", tool_call: "call", tool_result: "result", image: "image", audio: "audio" };
+const SEG_LABEL = { system: "system", tools: "tool definitions", user: "user", assistant: "assistant", tool_call: "tool call", tool_result: "tool result", image: "image soft tokens", audio: "audio soft tokens" };
+
+function segment(tokens) {
+  const starts = [];
+  let text = "";
+  for (const t of tokens) { starts.push(text.length); text += t.text; }
+  const charSeg = new Array(text.length).fill("system");
+  const paint = (from, to, seg) => { for (let i = from; i < to && i < text.length; i++) charSeg[i] = seg; };
+
+  const turns = [...text.matchAll(/<\|im_start\|>(\w+)|<\|start_header_id\|>(\w+)<\|end_header_id\|>|<start_of_turn>(\w+)|<\|turn>(\w+)/g)];
+  turns.forEach((m, k) => {
+    let role = m[1] || m[2] || m[3] || m[4];
+    if (role === "model") role = "assistant";
+    if (role === "ipython") role = "tool";
+    const end = k + 1 < turns.length ? turns[k + 1].index : text.length;
+    paint(m.index, end, role === "tool" ? "tool_result" : (SEG_VAR[role] ? role : "system"));
+  });
+  // Only inside the turn they can belong to: the system prompt's tool instructions contain an
+  // example <tool_call> that isn't a real call. Gemma 4 writes its tool results in the model turn.
+  for (const [re, seg, within] of [[/<tools>[\s\S]*?<\/tools>/g, "tools", ["system"]],
+                                   [/(<\|tool>[\s\S]*?<tool\|>)+/g, "tools", ["system"]],
+                                   [/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, "tool_call", ["assistant"]],
+                                   [/<\|tool_call>[\s\S]*?(<tool_call\|>|$)/g, "tool_call", ["assistant"]],
+                                   [/<tool_response>[\s\S]*?(<\/tool_response>|$)/g, "tool_result", ["user", "tool_result"]],
+                                   [/<\|tool_response>[\s\S]*?(<tool_response\|>|$)/g, "tool_result", ["assistant", "user"]]]) {
+    for (const m of text.matchAll(re)) if (within.includes(charSeg[m.index])) paint(m.index, m.index + m[0].length, seg);
+  }
+  const out = starts.map((s, i) => charSeg[Math.min(s + Math.max(0, tokens[i].text.length - 1), text.length - 1)] || "system");
+  for (const r of mediaRuns(tokens)) for (let i = r.start; i <= r.end; i++) out[i] = r.kind;
+  return out;
+}
+
+// Token chips, with each run of image / audio placeholders collapsed into one chip.
+function chipsFor(tokens, offset = 0, clsOf = () => "") {
+  const runs = mediaRuns(meta.tokens).filter((r) => r.end >= offset && r.start < offset + tokens.length);
+  const html = [];
+  for (let j = 0; j < tokens.length; j++) {
+    const i = offset + j, run = runs.find((r) => r.start <= i && i <= r.end);
+    if (run) {
+      if (i === Math.max(run.start, offset)) {
+        const n = run.end - run.start + 1;
+        html.push(`<span class="tok mediarun ${clsOf(i)}" style="--segc:var(--seg-${run.kind})" title="positions ${run.start}–${run.end}: ${n} <|${run.kind}|> placeholders, each replaced by one ${run.kind} soft token"><span class="p">${run.kind === "image" ? "🖼" : "🔊"} ×${n}</span><span class="i">${tokens[j].id}</span></span>`);
+      }
+      continue;
+    }
+    html.push(tokChip(tokens[j], clsOf(i), segs[i]));
+  }
+  return html.join("");
+}
+
+function segLegend(present) {
+  return `<div class="seglegend">${Object.keys(SEG_VAR).filter((s) => present.has(s))
+    .map((s) => `<span><i style="background:var(--seg-${SEG_VAR[s]})"></i>${SEG_LABEL[s]}</span>`).join("")}</div>`;
+}
+
+const tip = $("tip");
+function showTip(e, text) {
+  tip.textContent = text;
+  tip.style.display = "block";
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + "px";
+  tip.style.top = e.clientY + 14 + "px";
+}
+const hideTip = () => (tip.style.display = "none");
+
+// Diverging color: blue (neg) → dark → orange (pos). sqrt makes small values visible.
+function diverge(t) {
+  const a = Math.sqrt(Math.min(1, Math.abs(t)));
+  const base = [22, 25, 31], hi = t < 0 ? [59, 130, 246] : [249, 115, 22];
+  return base.map((b, i) => Math.round(b + (hi[i] - b) * a));
+}
+
+// ---------------------------------------------------------------- widgets
+// 1D vector as a 2D heatmap (e.g. 1536 = 96 × 16). Scale is the 99th percentile so the few
+// huge "massive activation" dims saturate instead of washing everything else out.
+function heatmap(v, cols = 96) {
+  const rows = Math.ceil(v.length / cols);
+  const c = document.createElement("canvas");
+  c.className = "heat";
+  c.width = cols; c.height = rows;
+  const abs = Float32Array.from(v, Math.abs).sort();
+  const scale = abs[Math.floor(abs.length * 0.99)] || 1;
+  const ctx = c.getContext("2d"), img = ctx.createImageData(cols, rows);
+  for (let i = 0; i < v.length; i++) {
+    const [r, g, b] = diverge(v[i] / scale);
+    img.data.set([r, g, b, 255], i * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+  c.style.aspectRatio = `${cols} / ${rows}`;
+  c.onmousemove = (e) => {
+    const x = Math.floor((e.offsetX / c.clientWidth) * cols), y = Math.floor((e.offsetY / c.clientHeight) * rows);
+    const i = y * cols + x;
+    if (i < v.length) showTip(e, `dim ${i}\n${v[i].toPrecision(5)}${Math.abs(v[i]) > scale ? "  (saturated)" : ""}`);
+  };
+  c.onmouseleave = hideTip;
+  return c;
+}
+
+function vecCard(title, v, note = "") {
+  const st = stats(v);
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h4>${title}<span>‖v‖ = ${fmt(st.norm, 2)}${note ? " · " + note : ""}</span></h4>`;
+  card.appendChild(heatmap(v));
+  const s = document.createElement("div");
+  s.className = "stats";
+  s.innerHTML = `<span>mean <b>${fmt(st.mean, 4)}</b></span><span>std <b>${fmt(st.std, 3)}</b></span>` +
+    `<span>min <b>${fmt(st.min, 2)}</b></span><span>max <b>${fmt(st.max, 2)}</b></span>` +
+    `<span>largest: ${st.top.map((i) => `<b>d${i}=${fmt(v[i], 2)}</b>`).join(" ")}</span>`;
+  card.appendChild(s);
+  return card;
+}
+
+// Attention: heads × keys, for the current query position.
+function attnCard(step, layer) {
+  const s = steps[step], H = meta.heads;
+  const card = document.createElement("div");
+  card.className = "card";
+  const w = vec(step, layer, "attn");
+  const K = w.length / H, k0 = s.layers[layer].k0 ?? 0;
+  const tokenAt = (k) => tokenAtPos(k0 + k);
+  card.innerHTML = `<h4>Attention weights<span>${H} heads × ${K} positions${k0 ? ` (${k0}–${k0 + K - 1})` : ""} · query = position ${s.position}</span></h4>`;
+  const c = document.createElement("canvas");
+  c.className = "heat";
+  c.width = K; c.height = H;
+  c.style.aspectRatio = `${Math.max(K, H * 6)} / ${H * 6}`;
+  const ctx = c.getContext("2d"), img = ctx.createImageData(K, H);
+  for (let i = 0; i < w.length; i++) {
+    const a = Math.sqrt(w[i]);
+    img.data.set([Math.round(22 + 72 * a), Math.round(25 + 209 * a), Math.round(31 + 181 * a), 255], i * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+  c.onmousemove = (e) => {
+    const k = Math.floor((e.offsetX / c.clientWidth) * K), h = Math.floor((e.offsetY / c.clientHeight) * H);
+    if (k < K && h < H) showTip(e, `head ${h} → pos ${k0 + k} "${tokenAt(k).text.replace(/\n/g, "↵")}"\nweight ${w[h * K + k].toFixed(4)}`);
+  };
+  c.onmouseleave = hideTip;
+  card.appendChild(c);
+
+  // Which positions does this layer look at, averaged over heads?
+  const avg = new Float32Array(K);
+  for (let h = 0; h < H; h++) for (let k = 0; k < K; k++) avg[k] += w[h * K + k] / H;
+  const top = [...avg.keys()].sort((a, b) => avg[b] - avg[a]).slice(0, 6);
+  const row = document.createElement("div");
+  row.className = "chiprow";
+  row.style.marginTop = "8px";
+  row.innerHTML = `<span style="color:var(--muted)">avg over heads:</span>` +
+    top.map((k) => `<span class="c">${vis(tokenAt(k).text)}<span>@${k0 + k} ${pct(avg[k])}</span></span>`).join("");
+  card.appendChild(row);
+  return card;
+}
+
+// ---------------------------------------------------------------- media (real encoder captures)
+const u8 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+const mediaCache = new Map();
+// The i-th placeholder run in the prompt -> its entry in steps[0].media (matched by position).
+const mediaOfRun = (i) => steps[0].media.findIndex((m) => m.soft.start === mediaRuns(meta.tokens)[i].start);
+function mediaData(i) {
+  if (!mediaCache.has(i)) {
+    const m = steps[0].media[i];
+    const maps = (x) => ({ norm: f16(x.norm), rgb: u8(x.rgb) });
+    mediaCache.set(i, {
+      m,
+      xy: m.patches_xy ? u8(m.patches_xy) : null,
+      input: maps(m.encoder_input),
+      layers: m.encoder_layers.map(maps),
+      soft: maps(m.soft),
+      mel: m.mel ? u8(m.mel) : null,
+    });
+  }
+  return mediaCache.get(i);
+}
+
+// Colormaps: inferno-like for magnitudes / spectrograms.
+const INFERNO = [[0, 0, 4], [40, 11, 84], [101, 21, 110], [159, 42, 99], [212, 72, 66], [245, 125, 21], [250, 193, 39], [252, 255, 164]];
+function inferno(t) {
+  t = Math.max(0, Math.min(1, t)) * (INFERNO.length - 1);
+  const i = Math.min(INFERNO.length - 2, Math.floor(t)), f = t - i;
+  return INFERNO[i].map((a, k) => Math.round(a + (INFERNO[i + 1][k] - a) * f));
+}
+function normColors(norms) {
+  const lg = Array.from(norms, Math.log1p), lo = Math.min(...lg), hi = Math.max(...lg);
+  return lg.map((v) => inferno((v - lo) / (hi - lo || 1)));
+}
+
+// Paint per-patch values on the patch grid (gx × gy) at each patch's real (x, y).
+function patchCanvas(d, colors, hover) {
+  const [gx, gy] = d.m.patch_grid;
+  const c = document.createElement("canvas");
+  c.width = gx; c.height = gy;
+  const ctx = c.getContext("2d"), img = ctx.createImageData(gx, gy);
+  for (let i = 0; i < colors.length; i++) {
+    const x = d.xy[2 * i], y = d.xy[2 * i + 1];
+    img.data.set([...colors[i], 255], (y * gx + x) * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+  c.style.aspectRatio = `${gx} / ${gy}`;
+  if (hover) {
+    const at = new Map();
+    for (let i = 0; i < colors.length; i++) at.set(d.xy[2 * i + 1] * gx + d.xy[2 * i], i);
+    c.onmousemove = (e) => {
+      const x = Math.floor((e.offsetX / c.clientWidth) * gx), y = Math.floor((e.offsetY / c.clientHeight) * gy);
+      const i = at.get(y * gx + x);
+      if (i != null) showTip(e, hover(i, x, y));
+    };
+    c.onmouseleave = hideTip;
+  }
+  return c;
+}
+const rgbOf = (bytes) => Array.from({ length: bytes.length / 3 }, (_, i) => [bytes[3 * i], bytes[3 * i + 1], bytes[3 * i + 2]]);
+
+// Grid of soft tokens (row-major, gw × gh), as the vision pooler lays them out.
+function gridCanvas(gw, gh, colors, hover) {
+  const c = document.createElement("canvas");
+  c.width = gw; c.height = gh;
+  const ctx = c.getContext("2d"), img = ctx.createImageData(gw, gh);
+  colors.forEach((col, i) => img.data.set([...col, 255], i * 4));
+  ctx.putImageData(img, 0, 0);
+  c.style.aspectRatio = `${gw} / ${gh}`;
+  c.onmousemove = (e) => {
+    const x = Math.floor((e.offsetX / c.clientWidth) * gw), y = Math.floor((e.offsetY / c.clientHeight) * gh);
+    if (x < gw && y < gh) showTip(e, hover(y * gw + x, x, y));
+  };
+  c.onmouseleave = hideTip;
+  return c;
+}
+
+// A horizontal strip of per-frame colors (audio encoder frames, soft tokens).
+function stripCanvas(colors, hover) {
+  const c = document.createElement("canvas");
+  c.width = colors.length; c.height = 1;
+  const ctx = c.getContext("2d"), img = ctx.createImageData(colors.length, 1);
+  colors.forEach((col, i) => img.data.set([...col, 255], i * 4));
+  ctx.putImageData(img, 0, 0);
+  if (hover) {
+    c.onmousemove = (e) => { const i = Math.floor((e.offsetX / c.clientWidth) * colors.length); if (i < colors.length) showTip(e, hover(i)); };
+    c.onmouseleave = hideTip;
+  }
+  return c;
+}
+
+function melCanvas(d) {
+  const [T, F] = d.m.mel_shape;
+  const c = document.createElement("canvas");
+  c.className = "mel";
+  c.width = T; c.height = F;
+  const ctx = c.getContext("2d"), img = ctx.createImageData(T, F);
+  for (let t = 0; t < T; t++) for (let f = 0; f < F; f++) {
+    img.data.set([...inferno(d.mel[t * F + f] / 255), 255], ((F - 1 - f) * T + t) * 4);  // low frequencies at the bottom
+  }
+  ctx.putImageData(img, 0, 0);
+  c.style.height = "140px";
+  c.style.imageRendering = "pixelated";
+  const hop = d.m.hop_seconds;
+  c.onmousemove = (e) => {
+    const t = Math.floor((e.offsetX / c.clientWidth) * T), f = F - 1 - Math.floor((e.offsetY / c.clientHeight) * F);
+    showTip(e, `frame ${t}${hop ? ` · ${(t * hop).toFixed(2)} s` : ""}\nmel bin ${f}\nlevel ${d.mel[t * F + f]}/255`);
+  };
+  c.onmouseleave = hideTip;
+  return c;
+}
+
+// The actual audio file, decoded by the browser, drawn as min/max envelope.
+async function drawWave(canvas, url) {
+  const ctx2 = new AudioContext();
+  const buf = await ctx2.decodeAudioData(await (await fetch(url)).arrayBuffer());
+  ctx2.close();
+  const x = buf.getChannelData(0), W = canvas.width = 1200, H = canvas.height = 120;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#a3e635";
+  const per = Math.max(1, Math.floor(x.length / W));
+  for (let i = 0; i < W; i++) {
+    let lo = 1, hi = -1;
+    for (let j = i * per; j < Math.min(x.length, (i + 1) * per); j++) { lo = Math.min(lo, x[j]); hi = Math.max(hi, x[j]); }
+    ctx.fillRect(i, H / 2 - hi * H / 2, 1, Math.max(1, (hi - lo) * H / 2));
+  }
+  canvas.title = `${buf.duration.toFixed(2)} s · ${buf.sampleRate} Hz (as stored)`;
+}
+
+function imageStage(box, d, n) {
+  const m = d.m, [gx, gy] = m.patch_grid, [gw, gh] = m.grid, p = m.patch, k = m.pool, L = d.layers.length;
+  box.appendChild(h("p", `The image processor resized your image to <b>${gx * p} × ${gy * p}</b> px and cut it into <b>${gx} × ${gy} = ${gx * gy}</b> patches of ${p} × ${p} px. Each patch's ${3 * p * p} pixel values are projected to a vector and given a 2-D position embedding. <b>${L} transformer layers</b> let every patch attend to every other. Then each ${k} × ${k} block of patches is averaged into one vector: a <b>${gw} × ${gh}</b> grid of <b>${m.soft.count} soft tokens</b>, normalized and projected to ${meta.hidden_size} dims, the LLM's width. Those vectors are written straight into the <code>&lt;|image|&gt;</code> placeholder slots at positions ${m.soft.start}–${m.soft.start + m.soft.count - 1}. From there on, the LLM treats them like any other token.`, "what"));
+  box.appendChild(h("div", `<b>${m.file ? "your image" : "image"}</b>→<b>${gx * p}×${gy * p} px</b>→<b>${gx * gy} patches</b>→<b>vision encoder × ${L}</b>→<b>pool ${k}×${k}</b>→<b>${m.soft.count} soft tokens</b>→<b>positions ${m.soft.start}…</b>`, "flow"));
+
+  // 1. The exact pixels the tower received, with the patch and soft-token grids drawn over it.
+  const c1 = h("div", `<h4>What the vision tower received<span>rebuilt from its patch tensor · ${gx * p} × ${gy * p} px</span></h4>`, "card");
+  const view = h("div", `<img src="${m.pixels}" alt="">`, "mediaview");
+  const over = document.createElement("canvas");
+  over.className = "over";
+  view.appendChild(over);
+  c1.appendChild(view);
+  const btns = h("div", `<button class="on" data-g="soft">soft-token grid</button><button data-g="patch">patch grid</button><button data-g="none">none</button>`, "seg-btns");
+  btns.style.marginTop = "8px";
+  c1.appendChild(btns);
+  const drawGrid = (mode) => {
+    over.width = gx * p; over.height = gy * p;
+    const ctx = over.getContext("2d");
+    ctx.clearRect(0, 0, over.width, over.height);
+    if (mode === "none") return;
+    const step = mode === "soft" ? k * p : p;
+    ctx.strokeStyle = mode === "soft" ? "rgba(34,211,238,.55)" : "rgba(255,255,255,.18)";
+    ctx.lineWidth = mode === "soft" ? 1.5 : 1;
+    for (let x = 0; x <= over.width; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, over.height); ctx.stroke(); }
+    for (let y = 0; y <= over.height; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(over.width, y); ctx.stroke(); }
+  };
+  btns.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    btns.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    drawGrid(b.dataset.g);
+  }));
+  over.onmousemove = (e) => {
+    const px = Math.floor((e.offsetX / over.clientWidth) * gx), py = Math.floor((e.offsetY / over.clientHeight) * gy);
+    const ti = Math.floor(py / k) * gw + Math.floor(px / k);
+    showTip(e, `patch (${px}, ${py})\nsoft token ${ti} → position ${m.soft.start + ti}`);
+  };
+  over.onmouseleave = hideTip;
+  drawGrid("soft");
+  box.appendChild(c1);
+
+  // 2. Inside the encoder: every layer's patch features, as PCA colors or norms.
+  const c2 = h("div", `<h4>Inside the vision encoder<span>each patch's ${L ? "feature vector" : ""} per layer · colors = its top-3 principal components (RGB)</span></h4>`, "card");
+  const modeBtns = h("div", `<button class="on" data-m="rgb">PCA colors</button><button data-m="norm">‖v‖ per patch</button><button data-a="play">▶ animate layers</button>`, "seg-btns");
+  modeBtns.style.marginBottom = "10px";
+  c2.appendChild(modeBtns);
+  const big = h("div", "", "bigmap");
+  c2.appendChild(big);
+  const tiles = h("div", "", "tiles");
+  c2.appendChild(tiles);
+  const all = [{ name: "input", maps: d.input }, ...d.layers.map((x, i) => ({ name: `L${i}`, maps: x }))];
+  let mode = "rgb", sel = all.length - 1, timer = null;
+  const colorsOf = (maps) => (mode === "rgb" ? rgbOf(maps.rgb) : normColors(maps.norm));
+  const hover = (maps, name) => (i, x, y) => `${name} · patch (${x}, ${y})\n‖v‖ = ${maps.norm[i].toFixed(2)}`;
+  const paint = () => {
+    big.innerHTML = "";
+    const a = all[sel];
+    const left = h("div", "");
+    left.appendChild(patchCanvas(d, colorsOf(a.maps), hover(a.maps, a.name)));
+    left.appendChild(h("div", `${a.name === "input" ? "patch embeddings + positions (encoder input)" : `after vision layer ${a.name.slice(1)}`} · ${mode === "rgb" ? "PCA of this layer" : "log ‖v‖"}`, "cap"));
+    const right = h("div", `<img src="${m.pixels}" style="width:100%;border-radius:3px;display:block" alt="">`);
+    right.appendChild(h("div", "the same image, for comparison", "cap"));
+    big.append(left, right);
+    tiles.innerHTML = "";
+    all.forEach((t, i) => {
+      const tile = h("div", "", "tile" + (i === sel ? " sel" : ""));
+      tile.appendChild(patchCanvas(d, colorsOf(t.maps)));
+      tile.appendChild(h("div", t.name));
+      tile.onclick = () => { sel = i; paint(); };
+      tiles.appendChild(tile);
+    });
+  };
+  modeBtns.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    if (b.dataset.a) {
+      if (timer) { clearInterval(timer); timer = null; b.textContent = "▶ animate layers"; return; }
+      sel = 0; b.textContent = "⏸ stop";
+      timer = setInterval(() => { if (!document.body.contains(b)) return clearInterval(timer); sel = (sel + 1) % all.length; paint(); }, 450);
+      return;
+    }
+    modeBtns.querySelectorAll("[data-m]").forEach((x) => x.classList.toggle("on", x === b));
+    mode = b.dataset.m;
+    paint();
+  }));
+  paint();
+  box.appendChild(c2);
+
+  // 3. The soft tokens that actually enter the LLM (read back from its layer-0 input).
+  const c3 = h("div", `<h4>Soft tokens entering the LLM<span>${gw} × ${gh} grid · read from the decoder's layer-0 input at positions ${m.soft.start}–${m.soft.start + m.soft.count - 1}</span></h4>`, "card");
+  const g = h("div", "", "bigmap");
+  const sr = rgbOf(d.soft.rgb), sn = normColors(d.soft.norm);
+  const tipSoft = (i, x, y) => `soft token ${i} (${x}, ${y}) → position ${m.soft.start + i}\n‖v‖ = ${d.soft.norm[i].toFixed(2)}`;
+  const a1 = h("div", ""), a2 = h("div", "");
+  a1.appendChild(gridCanvas(gw, gh, sr, tipSoft)); a1.appendChild(h("div", `PCA colors of the ${m.soft.count} vectors (${meta.hidden_size}-dim)`, "cap"));
+  a2.appendChild(gridCanvas(gw, gh, sn, tipSoft)); a2.appendChild(h("div", "log ‖v‖ per soft token", "cap"));
+  g.append(a1, a2);
+  c3.appendChild(g);
+  box.appendChild(c3);
+}
+
+function audioStage(box, d, n) {
+  const m = d.m, [T, F] = m.mel_shape, L = d.layers.length, E = m.encoder_frames, hop = m.hop_seconds;
+  const secs = hop ? (T * hop).toFixed(2) : "?";
+  box.appendChild(h("p", `Your audio (16 kHz mono) is turned into a <b>log-mel spectrogram</b>: ${T} frames × ${F} frequency bands, one frame every ${hop ? hop * 1000 : "?"} ms (${secs} s). The audio encoder's convolutions downsample it ${Math.round(T / E)}× in time to <b>${E} frames</b>, then <b>${L} layers</b> (attention + convolution) process them. Each output frame is normalized and projected to ${meta.hidden_size} dims: <b>${m.soft.count} soft tokens</b>, written into the <code>&lt;|audio|&gt;</code> placeholder slots at positions ${m.soft.start}–${m.soft.start + m.soft.count - 1}.`, "what"));
+  box.appendChild(h("div", `<b>your audio</b>→<b>${secs} s @ 16 kHz</b>→<b>mel ${T}×${F}</b>→<b>conv ↓${Math.round(T / E)}×</b>→<b>audio encoder × ${L}</b>→<b>${m.soft.count} soft tokens</b>→<b>positions ${m.soft.start}…</b>`, "flow"));
+
+  const c1 = h("div", `<h4>Waveform<span>the stored file, decoded by your browser</span></h4>`, "card");
+  if (m.file) {
+    const wave = document.createElement("canvas");
+    wave.className = "wave";
+    wave.style.height = "70px";
+    c1.appendChild(wave);
+    drawWave(wave, m.file).catch(() => (wave.replaceWith(h("div", "couldn't decode the file", "stats"))));
+    c1.appendChild(h("div", `<audio controls src="${m.file}" style="width:100%;margin-top:8px;height:34px"></audio>`));
+  }
+  box.appendChild(c1);
+
+  const c2 = h("div", `<h4>Log-mel spectrogram<span>the encoder's actual input · ${T} × ${F} · low frequencies at the bottom</span></h4>`, "card");
+  c2.appendChild(melCanvas(d));
+  box.appendChild(c2);
+
+  const c3 = h("div", `<h4>Inside the audio encoder<span>${E} frames per layer · PCA colors · aligned with the spectrogram above</span></h4>`, "card");
+  const strips = h("div", "", "strips");
+  const rows = [{ name: "input", maps: d.input }, ...d.layers.map((x, i) => ({ name: `L${i}`, maps: x }))];
+  for (const r of rows) {
+    const row = h("div", `<span>${r.name}</span>`, "srow");
+    row.appendChild(stripCanvas(rgbOf(r.maps.rgb), (i) => `${r.name} · frame ${i}${hop ? ` ≈ ${(i * T / E * hop).toFixed(2)} s` : ""}\n‖v‖ = ${r.maps.norm[i].toFixed(2)}`));
+    strips.appendChild(row);
+  }
+  const srow = h("div", `<span style="color:var(--seg-audio)">soft</span>`, "srow");
+  srow.appendChild(stripCanvas(rgbOf(d.soft.rgb), (i) => `soft token ${i} → position ${m.soft.start + i}\n‖v‖ = ${d.soft.norm[i].toFixed(2)}`));
+  strips.appendChild(srow);
+  c3.appendChild(strips);
+  box.appendChild(c3);
+}
+
+// Where this position's attention lands inside each image / audio clip (real weights).
+function mediaAttnCards(step, layer) {
+  const s = steps[step], L = s.layers[layer], H = meta.heads;
+  if (!steps[0].media?.length) return [];
+  const w = vec(step, layer, "attn"), K = w.length / H, k0 = L.k0 ?? 0;
+  const cards = [];
+  steps[0].media.forEach((m, mi) => {
+    const lo = m.soft.start, hi = lo + m.soft.count - 1;
+    const card = h("div", "", "card");
+    if (hi < k0 || lo > k0 + K - 1) {
+      card.innerHTML = `<h4>Attention onto ${m.kind} ${mi + 1}<span>positions ${lo}–${hi}</span></h4><div class="stats">Outside this layer's view: it's a sliding-window layer that only sees positions ${k0}–${k0 + K - 1}.</div>`;
+      cards.push(card);
+      return;
+    }
+    let head = -1;  // -1 = average over heads
+    const weights = () => Array.from({ length: m.soft.count }, (_, t) => {
+      const k = lo + t - k0;
+      if (k < 0 || k >= K) return 0;
+      if (head >= 0) return w[head * K + k];
+      let sum = 0;
+      for (let hh = 0; hh < H; hh++) sum += w[hh * K + k];
+      return sum / H;
+    });
+    const draw = () => {
+      const ws = weights(), share = ws.reduce((a, b) => a + b, 0), mx = Math.max(...ws) || 1;
+      card.querySelector("h4 span").textContent = `${pct(share)} of ${head < 0 ? "this position's attention (avg over heads)" : `head ${head}'s attention`} lands here`;
+      const target = card.querySelector(".target");
+      target.innerHTML = "";
+      if (m.kind === "image") {
+        const [gw, gh] = m.grid;
+        const view = h("div", `<img src="${m.pixels}" alt="">`, "mediaview");
+        const over = document.createElement("canvas");
+        over.className = "over";
+        over.width = gw; over.height = gh;
+        const ctx = over.getContext("2d"), img = ctx.createImageData(gw, gh);
+        ws.forEach((v, i) => img.data.set([10, 12, 16, Math.round(235 * (1 - Math.sqrt(v / mx)))], i * 4));  // dim what isn't attended
+        ctx.putImageData(img, 0, 0);
+        over.style.imageRendering = "pixelated";
+        over.onmousemove = (e) => {
+          const x = Math.floor((e.offsetX / over.clientWidth) * gw), y = Math.floor((e.offsetY / over.clientHeight) * gh);
+          showTip(e, `soft token ${y * gw + x} → position ${lo + y * gw + x}\nweight ${ws[y * gw + x].toFixed(5)}`);
+        };
+        over.onmouseleave = hideTip;
+        view.appendChild(over);
+        target.appendChild(view);
+      } else {
+        const d = mediaData(mi);
+        target.appendChild(melCanvas(d));
+        const strip = stripCanvas(ws.map((v) => inferno(Math.sqrt(v / mx))), (i) => `soft token ${i} → position ${lo + i}\nweight ${ws[i].toFixed(5)}`);
+        strip.style.height = "16px";
+        strip.style.width = "100%";
+        strip.style.imageRendering = "pixelated";
+        target.appendChild(strip);
+      }
+    };
+    card.innerHTML = `<h4>Attention onto ${m.kind} ${mi + 1}<span></span></h4><div class="target"></div>`;
+    const btns = h("div", `<button class="on" data-h="-1">avg</button>${Array.from({ length: H }, (_, i) => `<button data-h="${i}">h${i}</button>`).join("")}`, "seg-btns");
+    btns.style.marginTop = "8px";
+    btns.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+      head = +b.dataset.h;
+      btns.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+      draw();
+    }));
+    card.appendChild(btns);
+    draw();
+    cards.push(card);
+  });
+  return cards;
+}
+
+// MLP intermediate activations, binned: each bar is the largest-magnitude neuron in its bin.
+function mlpCard(step, layer) {
+  const L = steps[step].layers[layer];
+  const card = document.createElement("div");
+  card.className = "card";
+  const bins = vec(step, layer, "mlp_bins");
+  const N = L.mlp_n, B = meta.mlp_bin;
+  card.innerHTML = `<h4>MLP neurons: act(gate) × up<span>${N.toLocaleString()} neurons, each bar = strongest of ${B}</span></h4>`;
+  const c = document.createElement("canvas");
+  c.className = "chart";
+  const W = bins.length * 2, Hh = 90;
+  c.width = W * 2; c.height = Hh * 2;
+  c.style.aspectRatio = `${W} / ${Hh}`;
+  const ctx = c.getContext("2d");
+  ctx.scale(2, 2);
+  const mx = Math.max(...bins.map(Math.abs)) || 1;
+  ctx.fillStyle = "#262b34"; ctx.fillRect(0, Hh / 2, W, 0.5);
+  bins.forEach((v, i) => {
+    const h = (Math.abs(v) / mx) * (Hh / 2 - 2);
+    ctx.fillStyle = v >= 0 ? "#f97316" : "#3b82f6";
+    ctx.fillRect(i * 2, v >= 0 ? Hh / 2 - h : Hh / 2, 1.6, h);
+  });
+  c.onmousemove = (e) => {
+    const i = Math.floor((e.offsetX / c.clientWidth) * bins.length);
+    if (i < bins.length) showTip(e, `neurons ${i * B}–${i * B + B - 1}\npeak ${bins[i].toPrecision(4)}`);
+  };
+  c.onmouseleave = hideTip;
+  card.appendChild(c);
+
+  const k50 = L.mlp_k50, k90 = L.mlp_k90;
+  const m = document.createElement("div");
+  m.style.marginTop = "10px";
+  m.innerHTML = `<div class="stats" style="margin:0 0 4px"><span>neurons holding 50% of |activation|: <b>${k50.toLocaleString()}</b> (${pct(k50 / N)})</span>` +
+    `<span>90%: <b>${k90.toLocaleString()}</b> (${pct(k90 / N)})</span></div>` +
+    `<div class="meter"><i style="width:${(k50 / N) * 100}%;background:var(--pos)"></i><i style="width:${((k90 - k50) / N) * 100}%;background:#7c3a12"></i></div>` +
+    `<div class="neurons" style="margin-top:10px">${L.mlp_top.map(([i, v]) => `<div><span>n${i}</span> <b class="${v >= 0 ? "p" : "n"}">${fmt(v, 3)}</b></div>`).join("")}</div>`;
+  card.appendChild(m);
+  return card;
+}
+
+function lensCard(step, layer) {
+  const L = steps[step].layers[layer];
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h4>Logit lens<span>if the model stopped after layer ${layer}</span></h4>
+    <div class="chiprow">${L.lens.map(([t, p], i) => `<span class="c" style="${i === 0 ? "border-color:var(--accent);color:var(--accent)" : ""}">${vis(t)}<span>${pct(p)}</span></span>`).join("")}</div>`;
+  return card;
+}
+
+function h(tag, html, cls) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  e.innerHTML = html;
+  return e;
+}
+
+// ---------------------------------------------------------------- inspector
+// Each stage shows its main cards; the supporting vectors sit in a collapsed "More detail"
+// section. Both that and the explanation's expanded state stick while stepping.
+let moreOpen = false, whatOpen = false;
+
+function renderInspector(c) {
+  const box = $("insp");
+  box.innerHTML = "";
+  const later = [];  // cards for "More detail"
+  const s = steps[c.step];
+  const inTok = s.input_tokens[s.input_tokens.length - 1];
+  const tag = `step ${c.step} · pos ${s.position}`;
+  const title = (t) => box.appendChild(h("h3", `${t}<span class="tag">${tag}</span>`));
+  const what = (t) => {
+    const p = box.appendChild(h("p", t, whatOpen ? "what open" : "what"));
+    p.title = "Click to expand / collapse";
+    p.onclick = (e) => { if (e.target.closest("a")) return; whatOpen = !whatOpen; p.classList.toggle("open", whatOpen); };
+  };
+  const prefillNote = s.prefill ? ` On this first pass all ${s.input_tokens.length} prompt tokens go through together; panels show the <b>last</b> position, which is the one that predicts the next token.` : "";
+
+  if (c.kind === "input") {
+    if (s.prefill && meta.replay) {
+      const r = meta.replay, P = meta.tokens.length, reused = r.reused, fresh = P - reused;
+      title(`Turn ${r.generation + 1} of ${r.generations}: context passed to the model`);
+      what(r.generation === 0
+        ? `The conversation so far is rendered through the chat template into one flat token sequence. That sequence <b>is</b> the model's entire memory: it has no other state. ${r.tools.length ? `Tool definitions (${r.tools.join(", ")}) are injected as text into the system prompt.` : ""}`
+        : `There is no memory between calls. For this turn the whole conversation is rendered again and tokenized from scratch: <b>${reused.toLocaleString()}</b> of ${P.toLocaleString()} tokens (${pct(reused / P)}) are exactly the previous call's prompt + reply, carried forward; <b>${fresh.toLocaleString()}</b> are new. This server has no prefix cache, so all ${P.toLocaleString()} go through every layer again. A KV cache shared across turns would skip the carried part.`);
+      const counts = {};
+      segs.forEach((g, i) => { counts[g] = counts[g] || { carried: 0, fresh: 0 }; counts[g][i < reused ? "carried" : "fresh"]++; });
+      const present = new Set(Object.keys(counts));
+      const bar = (pick) => Object.keys(SEG_VAR).filter((g) => counts[g]?.[pick])
+        .map((g) => `<i style="width:${counts[g][pick] / P * 100}%;background:var(--seg-${SEG_VAR[g]});${pick === "carried" ? "opacity:.45" : ""}" title="${SEG_LABEL[g]}: ${counts[g][pick]} ${pick}"></i>`).join("");
+      box.appendChild(h("div", `<h4>Context window<span>${P.toLocaleString()} tokens · faded = carried from the previous call</span></h4>
+        <div class="ctxbar">${bar("carried")}${bar("fresh")}</div>${segLegend(present)}
+        <div class="stats">${Object.keys(SEG_VAR).filter((g) => counts[g]).map((g) => `<span>${SEG_LABEL[g]} <b>${(counts[g].carried + counts[g].fresh).toLocaleString()}</b>${counts[g].fresh && reused ? ` (+${counts[g].fresh} new)` : ""}</span>`).join("")}</div>`, "card"));
+      const newPart = meta.tokens.slice(reused);
+      box.appendChild(h("div", `<h4>New this turn<span>${fresh} tokens</span></h4><div class="toks">${chipsFor(newPart, reused)}</div>`, "card"));
+      later.push(h("div", `<h4>Full context<span>${P} ids</span></h4><div class="toks">${chipsFor(meta.tokens, 0, (i) => (i < reused ? "carried" : ""))}</div>`, "card"));
+      const runs = mediaRuns(meta.tokens);
+      if (runs.length) box.appendChild(h("div", `<b>${runs.length} media input${runs.length > 1 ? "s" : ""} in this context:</b> ${runs.map((r) => `${r.end - r.start + 1} ${r.kind} placeholders at ${r.start}–${r.end}`).join(", ")}. The next ${runs.length > 1 ? "stages show" : "stage shows"} how the encoder turns ${runs.length > 1 ? "each one" : "it"} into the vectors that fill those slots.`, "card"));
+    } else if (s.prefill) {
+      title("Tokenize the prompt");
+      what(`The prompt is wrapped in the model's chat template, then split by the tokenizer into ${meta.tokens.length} tokens. Each token is just an integer id into a ${meta.vocab_size.toLocaleString()}-entry vocabulary. Dashed chips are special control tokens; <code>Ġ</code>/<code>·</code> means a leading space.`);
+      later.push(h("div", `<h4>Template text<span>${meta.template_text.length} chars</span></h4><pre class="tmpl">${esc(meta.template_text).replace(/(&lt;\|?[^&]*?\|?&gt;)/g, "<b>$1</b>")}</pre>`, "card"));
+      box.appendChild(h("div", `<h4>Tokens<span>${meta.tokens.length} ids</span></h4><div class="toks">${chipsFor(meta.tokens)}</div>`, "card"));
+    } else {
+      title("Feed the last token back in");
+      what(`The token sampled on the previous step becomes the input. Thanks to the <b>KV cache</b>, only this one token runs through the network; the keys and values for the ${s.position} earlier positions are reused from memory.`);
+      box.appendChild(h("div", `<div class="bigtok"><span class="box">${vis(inTok.text)}</span><span class="arrow">→ id</span><span class="num">${inTok.id}</span><span class="arrow">→ position</span><span class="num">${s.position}</span></div>`, "card"));
+    }
+  } else if (c.kind === "media") {
+    const d = mediaData(mediaOfRun(c.index));
+    title(`${d.m.kind === "image" ? "🖼 Image" : "🔊 Audio"} ${c.index + 1} → ${d.m.kind === "image" ? "vision" : "audio"} encoder → ${d.m.soft.count} soft tokens`);
+    (d.m.kind === "image" ? imageStage : audioStage)(box, d, c.index);
+  } else if (c.kind === "embed") {
+    const gemma = /^Gemma/.test(meta.architecture);
+    title("Embedding lookup");
+    what(`The id <code>${inTok.id}</code> selects row ${inTok.id} of <code>embed_tokens.weight</code> (${meta.vocab_size.toLocaleString()} × ${meta.hidden_size}). No math, just a table lookup${gemma ? `, which Gemma then multiplies by √${meta.hidden_size} ≈ ${Math.sqrt(meta.hidden_size).toFixed(1)}` : ""}. This ${meta.hidden_size}-number vector is the start of the <b>residual stream</b>, which every layer reads from and adds to.` +
+      (meta.ple ? ` Gemma 4 also looks the same id up in a <b>second table</b>, <code>embed_tokens_per_layer</code>, which holds a separate 256-number slice for every one of the ${meta.layers} layers. Each layer's "per-layer input" stage shows its slice.` : "") +
+      (mediaRuns(meta.tokens).length && s.prefill ? ` Positions holding image/audio placeholders don't use the table: the encoder's soft tokens were written there instead.` : "") + prefillNote);
+    box.appendChild(vecCard(`embedding["${vis(inTok.text)}"]${gemma ? ` × √${meta.hidden_size}` : ""}`, vec(c.step, 0, "resid_in")));
+  } else if (c.kind === "attn") {
+    const L = c.layer, Ld = s.layers[L];
+    const rin = vec(c.step, L, "resid_in"), ao = vec(c.step, L, "attn_out");
+    const kind = meta.layer_kind?.[L], src = meta.kv_source?.[L];
+    title(`Layer ${L} · Attention${kind ? `<span class="layertag">${kind === "sliding" ? "sliding window" : "full attention"}</span>` : ""}${src != null ? `<span class="layertag">KV from L${src}</span>` : ""}`);
+    what(`Normalize the residual, project it to queries${src != null ? "" : ", keys and values"} (${meta.heads} query heads${src != null ? "" : ` sharing ${meta.kv_heads} key/value head${meta.kv_heads > 1 ? "s" : ""}`}), and let this position mix in information from ${kind === "sliding" ? "the recent positions inside its window" : "every earlier position"}.` +
+      (src != null ? ` <b>This layer computes no keys or values of its own:</b> it reuses the ones layer ${src} computed (KV sharing), so only the queries are new.` : "") +
+      (meta.sandwich ? ` The output is normalized again (post-attention norm) before being <b>added</b> to the residual stream.` : ` The result is <b>added</b> to the residual stream.`) + prefillNote);
+    box.appendChild(h("div", "", "stack")).appendChild(attnCard(c.step, L));
+    for (const card of mediaAttnCards(c.step, L)) box.appendChild(card);
+    box.appendChild(vecCard(meta.sandwich ? "attention output, after post-attention norm (added)" : "attention output (added)", ao, `${pct(norm(ao) / norm(rin))} of ‖in‖`));
+    later.push(vecCard(`residual in ← ${L === 0 ? "embedding" : `output of layer ${L - 1}`}`, rin));
+    if (meta.sandwich) later.push(vecCard("attention output (raw)", vec(c.step, L, "attn_raw")));
+    later.push(vecCard(`residual after attention = in + ${meta.sandwich ? "added" : "attn"}`, add(rin, ao)));
+  } else if (c.kind === "mlp") {
+    const L = c.layer, Ld = s.layers[L];
+    const mid = add(vec(c.step, L, "resid_in"), vec(c.step, L, "attn_out"));
+    const mo = vec(c.step, L, "mlp_out");
+    const afterMlp = add(mid, mo);
+    title(`Layer ${L} · MLP`);
+    what(`Normalize again, expand ${meta.hidden_size} → ${Ld.mlp_n.toLocaleString()} with two projections (gate, up), apply act(gate) × up, then project back down to ${meta.hidden_size}.${Ld.mlp_n > meta.intermediate_size ? ` This layer's MLP is <b>double width</b> (${Ld.mlp_n.toLocaleString()} instead of ${meta.intermediate_size.toLocaleString()}), which Gemma 4 gives the KV-sharing layers.` : ""}` +
+      (meta.sandwich ? ` Its output is normalized again (post-feedforward norm) before being <b>added</b>.` : ` The result is <b>added</b> to the residual stream.`) + prefillNote);
+    box.appendChild(mlpCard(c.step, L));
+    box.appendChild(vecCard(meta.sandwich ? "MLP output, after post-feedforward norm (added)" : "MLP output (added)", mo, `${pct(norm(mo) / norm(mid))} of ‖in‖`));
+    if (!meta.ple) box.appendChild(h("div", "", "stack")).appendChild(lensCard(c.step, L));
+    const layerOut = !meta.ple && !Ld.scalar;  // is "after MLP" this layer's output?
+    if (meta.sandwich) later.push(vecCard("MLP output (raw)", vec(c.step, L, "mlp_raw")));
+    later.push(meta.ple ? vecCard("residual after MLP = mid + added", afterMlp)
+      : vecCard(`residual out → ${L + 1 < meta.layers ? `input of layer ${L + 1}` : "final norm"}`, layerOut ? residOut(c.step, L) : afterMlp));
+  } else if (c.kind === "ple") {
+    const L = c.layer, Ld = s.layers[L];
+    const afterMlp = add(add(vec(c.step, L, "resid_in"), vec(c.step, L, "attn_out")), vec(c.step, L, "mlp_out"));
+    const po = vec(c.step, L, "ple_out"), scale = Ld.scalar ?? 1;
+    const out = residOut(c.step, L);  // captured, = (afterMlp + po) × scale
+    title(`Layer ${L} · Per-layer input`);
+    what(`Gemma 4's third sublayer. This layer has its own <b>256-number input</b> for the token: its slice of <code>embed_tokens_per_layer</code>, combined with a projection of the token's embedding. A gate computed from the residual (<code>act(gate(x))</code>, 256 numbers) multiplies it element-wise, the product is projected back to ${meta.hidden_size} and normalized, and that is <b>added</b>. Finally the whole layer output is multiplied by this layer's learned scalar, <b>${scale}</b>.${prefillNote}`);
+    box.appendChild(vecCard(`residual out = (… + added) × ${scale} → ${L + 1 < meta.layers ? `input of layer ${L + 1}` : "final norm"}`, out));
+    box.appendChild(h("div", "", "stack")).appendChild(lensCard(c.step, L));
+    const g = h("div", "", "grid2");
+    g.appendChild(vecCard("per-layer input (this layer's slice)", vec(c.step, L, "ple_in")));
+    g.appendChild(vecCard("gate × per-layer input", vec(c.step, L, "ple_mix")));
+    later.push(g);
+    later.push(vecCard("projected + normed (added)", po, `${pct(norm(po) / norm(afterMlp))} of ‖in‖`));
+  } else if (c.kind === "norm") {
+    title("Final RMSNorm");
+    what(`After all ${meta.layers} layers, the residual stream is normalized: divided by its RMS and scaled by a learned per-dimension weight. This tames the huge outlier dimensions before the vocabulary projection.`);
+    const g = h("div", "", "grid2");
+    g.appendChild(vecCard("residual after last layer", vec(c.step, null, "final_resid")));
+    g.appendChild(vecCard("after final norm", vec(c.step, null, "final_normed")));
+    box.appendChild(g);
+    if (s.pos_norms) later.push(posNormCard(s));
+  } else if (c.kind === "head") {
+    title("LM head → logits");
+    what(`One big matrix multiply: the ${meta.hidden_size}-vector × <code>lm_head</code> (${meta.hidden_size} × ${meta.vocab_size.toLocaleString()}) gives one score (logit) per vocabulary entry.` +
+      (meta.softcap ? ` The scores are then <b>soft-capped</b>: <code>${meta.softcap} · tanh(logit / ${meta.softcap})</code>, so none can exceed ±${meta.softcap}.` : "") +
+      ` Softmax turns the scores into probabilities. Top ${s.candidates.length} shown.`);
+    const mx = Math.max(...s.candidates.map((x) => x.logit)), mn = Math.min(...s.candidates.map((x) => x.logit));
+    box.appendChild(h("div", `<h4>Top logits<span>of ${meta.vocab_size.toLocaleString()}</span></h4><table class="cands">
+      <tr><td class="n">#</td><td>token</td><td class="n">id</td><td class="n">logit</td><td class="barcell"></td><td class="n">softmax</td></tr>
+      ${s.candidates.map((x, i) => `<tr><td class="n">${i + 1}</td><td class="t">${vis(x.text)}</td><td class="n">${x.id}</td><td class="n">${x.logit.toFixed(2)}</td>
+        <td class="barcell"><div class="bar logit" style="width:${8 + 92 * (x.logit - mn) / (mx - mn || 1)}%"></div></td><td class="n">${pct(x.prob)}</td></tr>`).join("")}
+    </table>`, "card"));
+  } else if (c.kind === "sample") {
+    const T = meta.temperature;
+    title(s.forced ? "Next token (as recorded)" : "Sample the next token");
+    what((T > 0
+      ? `Divide logits by temperature <code>${T}</code>, softmax, keep the smallest set whose probability adds up to top_p <code>${meta.top_p}</code> (here <b>${s.nucleus}</b> token${s.nucleus > 1 ? "s" : ""}), renormalize, and roll the dice.`
+      : `Temperature 0: greedy, always take the highest-scoring token.`) +
+      (s.forced ? ` <b>Replay:</b> the dice already rolled during your chat. This is the token that was actually produced, with its probabilities recomputed.` +
+        (s.chosen.rank > 1 && T === 0 ? ` It ranks #${s.chosen.rank} here although greedy picked it live: a near-tie that the replay's attention kernel (eager vs the chat's SDPA) rounds the other way.` : "") : ""));
+    if (s.chosen.text === "<tool_call>" || s.chosen.text === "<|tool_call>") {
+      box.appendChild(h("div", `<b style="color:var(--seg-call)">The model decided to call a tool.</b> The tokens that follow are JSON naming the function and its arguments; the server parses them into an OpenAI <code>tool_calls</code> response instead of showing them as text.`, "card"));
+    }
+    box.appendChild(h("div", `<div class="bigtok"><span class="arrow">${s.forced ? "produced" : "picked"}</span><span class="box">${vis(s.chosen.text)}</span><span class="arrow">id</span><span class="num">${s.chosen.id}</span>
+      <span class="arrow">rank</span><span class="num">#${s.chosen.rank}</span><span class="arrow">p</span><span class="num">${pct(s.chosen.sample_prob)}</span></div>`, "card"));
+    box.appendChild(h("div", `<h4>Distribution<span>grey = raw softmax · teal = what sampling used</span></h4><table class="cands">
+      ${s.candidates.map((x) => `<tr class="${x.id === s.chosen.id ? "chosen" : ""} ${x.sample_prob === 0 ? "cut" : ""}"><td class="t">${vis(x.text)}</td>
+        <td class="barcell"><div class="bar raw" style="width:${x.prob * 100}%"></div><div class="bar" style="width:${x.sample_prob * 100}%;margin-top:2px"></div></td>
+        <td class="n">${pct(x.prob)}</td><td class="n">${pct(x.sample_prob)}</td></tr>`).join("")}
+    </table>`, "card"));
+    const last = c.step === steps.length - 1 && streamDone;
+    if (last && meta.replay?.finish_reason === "tool_calls") {
+      const calls = meta.replay.tool_calls.map((t) => `${t.function.name}(${t.function.arguments})`).join(", ");
+      const hasNext = meta.replay.generation + 1 < meta.replay.generations;
+      box.appendChild(h("div", `<b>Turn ends with a tool call:</b> <code>${esc(calls)}</code>. The client runs the tool and sends its result back as a new message${hasNext ? `, which starts the next turn. <a href="#" onclick="loadGeneration(${meta.replay.generation + 1});return false">Go to turn ${meta.replay.generation + 2} →</a>` : "."}`, "card"));
+    } else if (/^<\|(im_end|endoftext|eot_id)\|>$|^<end_of_turn>$|^<turn\|>$|^<eos>$/.test(s.chosen.text)) {
+      box.appendChild(h("div", `<b>End-of-turn token.</b> Generation stops here.`, "card"));
+    }
+  }
+  if (later.length) {
+    const d = box.appendChild(h("details", `<summary>More detail (${later.length})</summary>`, "more"));
+    d.open = moreOpen;
+    d.ontoggle = () => { moreOpen = d.open; };
+    later.forEach((x) => d.appendChild(x));
+  }
+  decorateCards(box);
+}
+
+// Prompt positions × layer boundaries: how big the residual stream gets, per token.
+function posNormCard(s) {
+  const N = s.pos_norms, B = N.length, P = N[0].length;
+  const card = h("div", `<h4>Residual ‖v‖, every prompt position × layer<span>rows = embedding, L0 … L${meta.layers - 1} · log color</span></h4>`, "card");
+  const c = document.createElement("canvas");
+  c.className = "heat";
+  c.width = P; c.height = B;
+  c.style.height = "200px";
+  const ctx = c.getContext("2d"), img = ctx.createImageData(P, B);
+  const all = N.flat().map(Math.log1p), lo = Math.min(...all), hi = Math.max(...all);
+  N.forEach((row, b) => row.forEach((v, p) => {
+    const a = (Math.log1p(v) - lo) / (hi - lo || 1);
+    img.data.set([Math.round(22 + 227 * a), Math.round(25 + 90 * a), Math.round(31 - 9 * a), 255], (b * P + p) * 4);
+  }));
+  ctx.putImageData(img, 0, 0);
+  c.onmousemove = (e) => {
+    const p = Math.floor((e.offsetX / c.clientWidth) * P), b = Math.floor((e.offsetY / c.clientHeight) * B);
+    if (p < P && b < B) showTip(e, `pos ${p} "${meta.tokens[p].text.replace(/\n/g, "↵")}"\n${b === 0 ? "embedding" : "after L" + (b - 1)}\n‖v‖ = ${N[b][p]}`);
+  };
+  c.onmouseleave = hideTip;
+  card.appendChild(c);
+  card.appendChild(h("div", `Bright columns are usually the first token and special tokens: "attention sinks" that build up very large norms.`, "stats"));
+  return card;
+}
+
+// ---------------------------------------------------------------- tower
+function buildTower() {
+  const t = $("tower");
+  const block = (key, name) => `<div class="row block" data-key="${key}"><span class="name">${name}</span><span></span><span class="lens"></span></div>`;
+  const rows = [block("input", "tokens")];
+  mediaRuns(meta.tokens).forEach((r, i) => rows.push(block(`media:${i}`, r.kind === "image" ? "🖼 vision" : "🔊 audio")));
+  rows.push(block("embed", "embed"));
+  for (let i = 0; i < meta.layers; i++) {
+    const kind = meta.layer_kind?.[i], src = meta.kv_source?.[i];
+    const tag = (kind ? (kind === "full" ? "F" : "S") : "") + (src != null ? `↺${src}` : "");
+    rows.push(`<div class="row" data-key="L${i}" data-layer="${i}" title=""><span class="name">L${String(i).padStart(2, "0")}<span class="kind">${tag}</span> <span class="sub"></span></span>
+      <span class="bars"><i class="r"></i><i class="a"></i><i class="m"></i>${meta.ple ? '<i class="p"></i>' : ""}</span><span class="lens"></span></div>`);
+  }
+  rows.push(block("norm", "norm"), block("head", "lm_head"), block("sample", "sample"));
+  t.innerHTML = rows.join("");
+  t.querySelectorAll(".row").forEach((r) => (r.onclick = () => {
+    if (!steps.length) return;
+    pause();
+    const step = r.dataset.key.startsWith("media:") ? 0 : cur().step;  // encoders only run on step 0
+    gi = startOf(step) + stagesOf(step).findIndex((x) => x.key === r.dataset.key);
+    render();
+  }));
+}
+
+// ---------------------------------------------------------------- hand-off: one slide per token
+// Appears once the main simulation has played to the end, then runs its own simulation, token by
+// token. Each token is a slide: its whole pass as one image (a row per stage: embedding, every
+// layer's output, final norm; real vectors). Click a slide to open it into one tile per layer.
+let handoffReady = false;   // main playback has reached the end at least once (for this trace)
+let handoffStep = -1;       // the token whose pass is playing
+let handoffTimer = null;
+let hoIdx = 0;              // stage of that pass reached so far (flowKeys index; last + 1 = token out)
+let hoPlaying = false;
+let hoDismissed = false;    // closed with ×; reopen from the transport bar
+let hoOpened = null;        // token whose slide is opened into per-layer tiles (null = all slides)
+let hoInProgress = false;   // a playthrough started with ▶ and not finished or cancelled yet
+const PASS_BIN = 8;         // dims per pixel column in a slide's pass image
+
+const flowKeys = () => ["embed", ...Array.from({ length: meta.layers }, (_, i) => `L${i}`), "norm"];
+function flowVector(step, key) {
+  if (key === "embed") return vec(step, 0, "resid_in");
+  if (key === "norm") return vec(step, null, "final_normed");
+  return residOut(step, +key.slice(1));
+}
+
+// Called from render(): only reveals the section the first time playback completes.
+function renderHandoff() {
+  $("hoOpen").hidden = !handoffReady || !hoDismissed;
+  if (!handoffReady || !meta || hoDismissed || !$("handoff").classList.contains("hidden")) return;
+  $("handoff").classList.remove("hidden");
+  buildSlides();
+  // Arrives finished and still: every slide complete, nothing moving until you press Play.
+  hoInProgress = false;
+  showSlides();
+}
+
+const isControl = (t) => /^<\|?\/?\w+\|?>$/.test(t);
+const stageName = (key) => (key === "embed" ? "embedding" : key === "norm" ? "final norm" : `layer ${key.slice(1)} output`);
+
+// A token's whole pass as one picture: row r = the vector stage r hands on, colored like the
+// heatmaps (orange +, blue −), each pixel the strongest of PASS_BIN dims, each row on its own scale.
+function passImage(step) {
+  const keys = flowKeys(), cols = Math.ceil(meta.hidden_size / PASS_BIN);
+  const c = document.createElement("canvas");
+  c.width = cols; c.height = keys.length;
+  const ctx = c.getContext("2d"), img = ctx.createImageData(cols, keys.length);
+  const norms = [];
+  keys.forEach((key, r) => {
+    const v = flowVector(step, key);
+    norms.push(norm(v));
+    const abs = Float32Array.from(v, Math.abs).sort();
+    const scale = abs[Math.floor(abs.length * 0.99)] || 1;
+    for (let b = 0; b < cols; b++) {
+      let peak = 0;
+      for (let d = b * PASS_BIN; d < Math.min(v.length, (b + 1) * PASS_BIN); d++) if (Math.abs(v[d]) > Math.abs(peak)) peak = v[d];
+      img.data.set([...diverge(peak / scale), 255], (r * cols + b) * 4);
+    }
+  });
+  ctx.putImageData(img, 0, 0);
+  c.onmousemove = (e) => {
+    const r = Math.min(keys.length - 1, Math.floor((e.offsetY / c.clientHeight) * keys.length));
+    const b = Math.floor((e.offsetX / c.clientWidth) * cols);
+    showTip(e, `${stageName(keys[r])}\n‖v‖ = ${norms[r].toFixed(1)}\ndims ${b * PASS_BIN}–${b * PASS_BIN + PASS_BIN - 1}`);
+  };
+  c.onmouseleave = hideTip;
+  return c;
+}
+
+// Grouped view: every token's slide, side by side.
+function buildSlides() {
+  const box = $("hoSlides");
+  box.innerHTML = "";
+  steps.forEach((s, step) => {
+    const slide = h("div", `<div class="cap"><b>${vis(s.chosen.text)}</b><span>#${step + 1}</span></div>`, "ho-slide");
+    const frame = h("div", "", "frame");
+    frame.appendChild(passImage(step));
+    frame.appendChild(h("div", "", "scan"));
+    slide.prepend(frame);
+    slide.title = `token ${step + 1}: ${s.prefill ? `${s.input_tokens.length} prompt tokens` : `"${s.input_tokens[0].text}"`} in → "${s.chosen.text}" out\nrows: embedding, ${meta.layers} layers, final norm · click to open each layer`;
+    slide.onclick = () => openSlide(step, true);
+    box.appendChild(slide);
+  });
+}
+
+// Progress (dimmed slides ahead, scan line) only shows during a playthrough you started.
+function showSlides() {
+  const keys = flowKeys();
+  $("hoSlides").querySelectorAll(".ho-slide").forEach((el, step) => {
+    el.classList.toggle("now", hoInProgress && step === handoffStep);
+    el.classList.toggle("ahead", hoInProgress && step > handoffStep);
+    const scan = el.querySelector(".scan");
+    scan.style.display = hoInProgress && step === handoffStep && hoIdx < keys.length ? "block" : "none";
+    scan.style.top = `${(Math.min(hoIdx, keys.length - 1) / keys.length) * 100}%`;
+    scan.style.height = `${100 / keys.length}%`;
+  });
+  if (hoInProgress) $("hoSlides").querySelector(".ho-slide.now")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (hoOpened != null) showTiles();
+  $("hoPlay").textContent = hoPlaying ? "⏸ Pause" : hoInProgress ? "▶ Resume" : "▶ Play";
+}
+
+function goToken(step) {
+  handoffStep = step;
+  hoIdx = 0;
+  if (hoOpened != null && hoOpened !== step) openSlide(step);  // the opened view follows playback
+  showSlides();
+}
+
+// Opened view: one token's stages as tiles. Clicking a slide just shows it, complete: it cancels
+// any playthrough and starts nothing. (During a playthrough the opened view follows along.)
+function openSlide(step, fromUser = false) {
+  if (fromUser) { hoPause(); hoInProgress = false; }
+  hoOpened = step;
+  $("hoSlides").hidden = true;
+  $("hoTiles").hidden = false;
+  $("hoBack").hidden = false;
+  buildPass(step);
+  showSlides();
+  if (hoPlaying) restartTimer();
+}
+function closeSlide() {
+  hoOpened = null;
+  $("hoSlides").hidden = false;
+  $("hoTiles").hidden = true;
+  $("hoBack").hidden = true;
+  showSlides();
+  if (hoPlaying) restartTimer();
+}
+
+function buildPass(step) {
+  const c = { step };
+  const s = steps[c.step], inTok = s.input_tokens[s.input_tokens.length - 1];
+  const track = $("hoTiles");
+  track.innerHTML = "";
+  track.appendChild(h("div", `<b>token ${step + 1}</b> · ${s.prefill ? `${s.input_tokens.length} prompt tokens` : `"${vis(inTok.text)}"`} in → <b style="color:var(--accent)">${vis(s.chosen.text)}</b> out · click a layer to open it above`, "ho-tilehead"));
+  const keys = flowKeys();
+  keys.forEach((key, i) => {
+    const v = flowVector(c.step, key);
+    const L = key.startsWith("L") ? +key.slice(1) : null;
+    const prev = i ? flowVector(c.step, keys[i - 1]) : null;
+    const delta = prev && L != null ? norm(v.map((x, d) => x - prev[d])) / norm(prev) : null;
+    const tag = L != null ? [meta.layer_kind?.[L] === "full" ? "F" : meta.layer_kind?.[L] === "sliding" ? "S" : "", meta.kv_source?.[L] != null ? `↺${meta.kv_source[L]}` : ""].join("") : "";
+    const node = h("div", `<div class="t">${key === "embed" ? "embed" : key === "norm" ? "final norm" : `L${String(L).padStart(2, "0")}`}<span>${tag}</span></div>`, "ho-node");
+    node.appendChild(heatmap(v));
+    node.appendChild(h("div", `<span>‖v‖ <b>${fmt(norm(v), 1)}</b></span>${delta != null ? `<span title="how much this layer changed the vector: ‖out − in‖ / ‖in‖">Δ <b>${pct(delta)}</b></span>` : ""}`, "s"));
+    if (L != null) node.appendChild(h("div", vis(s.layers[L].lens[0][0]) + ` <span style="color:var(--faint)">${pct(s.layers[L].lens[0][1])}</span>`, "lens"));
+    node.title = key === "embed" ? `embedding of "${inTok.text}" → input of layer 0`
+      : key === "norm" ? "last layer's output after the final norm → lm_head"
+      : `layer ${L} output → ${L + 1 < meta.layers ? `input of layer ${L + 1}` : "final norm"}`;
+    node.onclick = () => {  // open this stage in the detailed simulation above
+      pause();
+      hoPause();
+      const list = stagesOf(c.step);
+      const idx = key === "norm" ? list.findIndex((x) => x.key === "norm")
+        : list.length - 1 - [...list].reverse().findIndex((x) => x.key === key);
+      gi = startOf(c.step) + idx;
+      render();
+    };
+    track.appendChild(node);
+  });
+  const out = h("div", `<div class="t">next token</div><div class="bigtok">${vis(s.chosen.text)}</div><div class="s"><span>p <b>${pct(s.chosen.sample_prob)}</b></span></div>`, "ho-node out");
+  track.appendChild(out);
+  track.scrollTop = 0;
+}
+
+// Opened slide: all tiles shown, or (during a playthrough of this token) up to the stage reached.
+function showTiles() {
+  const nodes = [...$("hoTiles").querySelectorAll(".ho-node")];
+  const live = hoInProgress && hoOpened === handoffStep;
+  nodes.forEach((n, i) => { n.classList.toggle("lit", !live || i <= hoIdx); n.classList.toggle("now", live && hoPlaying && i === hoIdx); });
+  if (live && hoPlaying) nodes[Math.min(hoIdx, nodes.length - 1)]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+// ▶ plays the hand-off once, token by token: the scan line moves down each slide one stage per
+// tick, then the next token's slide. It stops at the end and stays there.
+function hoTick() {
+  const n = flowKeys().length;  // stages; index n = the token out
+  if (hoIdx < n) { hoIdx++; showSlides(); return; }
+  if (handoffStep + 1 < steps.length) { goToken(handoffStep + 1); return; }
+  hoPause();
+  hoInProgress = false;
+  showSlides();
+}
+function hoPlay() {
+  if (!hoInProgress) { hoInProgress = true; goToken(0); }
+  hoPlaying = true;
+  restartTimer();
+  showSlides();
+}
+// Opened slides play tile by tile; the grouped view sweeps the scan line faster.
+function restartTimer() {
+  clearInterval(handoffTimer);
+  handoffTimer = setInterval(hoTick, hoOpened != null ? 160 : 45);
+}
+function hoPause() {
+  hoPlaying = false;
+  clearInterval(handoffTimer);
+  if ($("hoSlides").children.length) showSlides();
+}
+$("hoPlay").onclick = () => (hoPlaying ? hoPause() : hoPlay());
+$("hoBack").onclick = closeSlide;
+$("hoClose").onclick = () => { hoPause(); hoDismissed = true; $("handoff").classList.add("hidden"); $("hoOpen").hidden = false; };
+$("hoOpen").onclick = () => { hoDismissed = false; renderHandoff(); };
+
+function renderTower(c) {
+  const sm = summary(c.step), s = steps[c.step], list = stagesOf(c.step);
+  const first = (key) => list.findIndex((x) => x.key === key);
+  const lastOf = (key) => list.length - 1 - [...list].reverse().findIndex((x) => x.key === key);
+  $("tower").querySelectorAll(".row").forEach((r) => {
+    const key = r.dataset.key, layer = r.dataset.layer, f = first(key);
+    const isActive = list[c.stage].key === key;
+    const done = f < 0 || lastOf(key) < c.stage;  // media rows on later steps: already encoded
+    r.className = r.className.replace(/ ?(active|done)/g, "") + (isActive ? " active" : done ? " done" : "");
+    if (layer != null) {
+      const i = +layer, bars = r.querySelectorAll(".bars i");
+      const reached = (kind) => c.stage >= list.findIndex((x) => x.key === key && x.kind === kind);
+      bars[0].style.width = reached("attn") ? sm.rw[i] * 100 + "%" : 0;
+      bars[1].style.width = reached("attn") ? sm.aw[i] * 100 + "%" : 0;
+      bars[2].style.width = reached("mlp") ? sm.mw[i] * 100 + "%" : 0;
+      if (bars[3]) bars[3].style.width = reached("ple") ? sm.pw[i] * 100 + "%" : 0;
+      r.querySelector(".sub").textContent = isActive ? { attn: "attn", mlp: "mlp", ple: "ple" }[list[c.stage].kind] : "";
+      r.querySelector(".lens").textContent = s.layers[i].lens[0][0].replace(/\n/g, "↵");
+      const kind = meta.layer_kind?.[i], src = meta.kv_source?.[i];
+      r.title = `L${i}${kind ? ` · ${kind} attention` : ""}${src != null ? ` · keys/values from L${src}` : ""}\n‖resid‖ ${sm.r[i].toFixed(1)}  ‖attn‖ ${sm.a[i].toFixed(1)}  ‖mlp‖ ${sm.m[i].toFixed(1)}${meta.ple ? `  ‖ple‖ ${sm.p[i].toFixed(1)}` : ""}\nlens: ${s.layers[i].lens.map(([t, p]) => `${t} ${pct(p)}`).join(", ")}`;
+    } else if (key === "sample") {
+      r.querySelector(".lens").textContent = done || isActive ? s.chosen.text.replace(/\n/g, "↵") : "";
+    } else if (key === "input") {
+      r.querySelector(".lens").textContent = s.prefill ? `${s.input_tokens.length} ids` : `#${s.input_tokens[0].id}`;
+    } else if (key.startsWith("media:")) {
+      const m = steps[0].media?.[mediaOfRun(+key.slice(6))];
+      r.querySelector(".lens").textContent = m ? `${m.soft.count} tok` : "";
+      r.title = c.step > 0 ? "encoded once on step 0; its soft tokens stay in the KV cache" : "";
+    }
+  });
+  const active = $("tower").querySelector(".row.active");
+  if (active && playing) active.scrollIntoView({ block: "nearest" });
+}
+
+// ---------------------------------------------------------------- sequence
+function renderSeq(c) {
+  const sampled = isLast(c);
+  const nGen = c.step + (sampled ? 1 : 0);
+  const reused = meta.replay?.reused ?? 0;
+  const chips = [chipsFor(meta.tokens, 0, (i) => (c.step === 0 ? "active " : "") + (i < reused ? "carried" : ""))];
+  for (let j = 0; j < nGen; j++) {
+    const isInput = j === c.step - 1, isFresh = sampled && j === c.step;
+    chips.push(tokChip(steps[j].chosen, `gen ${isInput ? "active" : ""} ${isFresh && lastShownGi !== gi ? "fresh" : ""}`));
+  }
+  $("seq").innerHTML = chips.join("");
+  const gen = steps.slice(0, nGen).map((s) => s.chosen.text).filter((t) => !/^<\|.*\|>$|^<\|?\w+\|?>$|^<\/?\w+\|>$/.test(t)).join("");
+  $("seqText").innerHTML = `<b>${esc(gen)}</b>`;
+}
+
+// ---------------------------------------------------------------- transport
+function render() {
+  if (!steps.length) return;
+  gi = Math.max(0, Math.min(gi, total() - 1));
+  const c = cur();
+  if (streamDone && gi === total() - 1) handoffReady = true;  // simulation complete
+  renderSeq(c);
+  renderTower(c);
+  renderHandoff();
+  renderInspector(c);
+  window.Space?.update(c);
+  updateTransport();
+  lastShownGi = gi;
+}
+
+// Cheap refresh for new data arriving while paused: don't rebuild the inspector under the mouse.
+function updateTransport() {
+  const c = cur();
+  const where = c.layer != null ? `layer ${c.layer} · ${{ attn: "attention", mlp: "MLP", ple: "per-layer input" }[c.kind]}`
+    : c.kind === "media" ? `${c.media} ${c.index + 1} · ${c.media === "image" ? "vision" : "audio"} encoder` : c.kind;
+  $("where").innerHTML = `token <b>${c.step + 1}</b>${streamDone ? "/" + steps.length : ""} · <b>${where}</b>`;
+  $("scrubber").max = total() - 1;
+  $("scrubber").value = gi;
+  $("scrubber").disabled = false;
+  $("buffer").textContent = streamDone ? "" : `buffered ${steps.length} tokens…`;
+  playLabel();
+}
+
+let rafLast = 0, acc = 0;
+function tick(t) {
+  if (!playing) return;
+  acc += t - rafLast;
+  rafLast = t;
+  let moved = false;
+  while (acc >= stageMs(cur())) {
+    acc -= stageMs(cur());
+    if (gi + 1 < total()) { gi++; moved = true; }
+    else {
+      acc = 0;
+      if (streamDone && $("autoTurn")?.checked && session && currentGen + 1 < session.generations.length) {
+        loadGeneration(currentGen + 1, true);
+        return;
+      }
+      if (streamDone) { pause(); break; }
+      $("buffer").textContent = "waiting for model…";
+      break;
+    }
+  }
+  if (moved) render();
+  requestAnimationFrame(tick);
+}
+
+function play() {
+  if (!steps.length) {
+    if (pending && !controller) startTrace(pending.url, pending.payload);  // the click that starts everything
+    return;
+  }
+  if (gi >= total() - 1 && streamDone) gi = 0;
+  playing = true;
+  $("play").textContent = "⏸ Pause";
+  rafLast = performance.now();
+  acc = 0;
+  requestAnimationFrame(tick);
+}
+function pause() {
+  playing = false;
+  playLabel();
+}
+// At the very end, Play means "start over"; say so instead of restarting silently.
+function playLabel() {
+  if (playing) return;
+  $("play").textContent = streamDone && steps.length && gi >= total() - 1 ? "↺ Replay" : "▶ Play";
+}
+const toggle = () => (playing ? pause() : play());
+function jump(d) { pause(); gi += d; render(); }
+// Jump to the end of one token's pass (used by the 3D panel's token slider).
+function showStepEnd(step) { pause(); gi = startOf(step) + stagesOf(step).length - 1; render(); }
+function jumpToken(d) {
+  pause();
+  const c = cur();
+  gi = d > 0 ? Math.min(startOf(c.step + 1), total() - 1) : startOf(Math.max(0, c.stage === 0 ? c.step - 1 : c.step));
+  render();
+}
+
+$("play").onclick = toggle;
+$("prevStage").onclick = () => jump(-1);
+$("nextStage").onclick = () => jump(1);
+$("scrubber").oninput = (e) => { pause(); gi = +e.target.value; render(); };
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") {
+    if (e.key === "Enter" && e.target.id === "prompt") run();
+    return;
+  }
+  if (e.key === " ") { e.preventDefault(); toggle(); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); e.shiftKey ? jumpToken(1) : jump(1); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); e.shiftKey ? jumpToken(-1) : jump(-1); }
+  else if (e.key === "Home") { pause(); gi = 0; render(); }
+  else if (e.key === "End") { pause(); gi = total() - 1; render(); }
+});
+
+// ---------------------------------------------------------------- run / replay
+function run() {
+  if (controller) { controller.abort(); return; }
+  const prompt = $("prompt").value.trim();
+  if (!prompt) return;
+  startTrace("/api/trace", { prompt, chat: $("chatTmpl").checked, temperature: +$("temp").value, max_tokens: +$("maxTok").value });
+}
+
+// Nothing runs on its own: opening a chat or a turn only arms it, and ▶ Play starts the replay.
+let pending = null;  // {url, payload} waiting for a click
+
+function resetTrace() {
+  if (controller) controller.abort();
+  controller = null;
+  pause();
+  meta = null; steps = []; gi = 0; lastShownGi = -1; segs = [];
+  decoded.clear(); summaries.clear(); mediaCache.clear();
+  handoffReady = false; handoffStep = -1; hoDismissed = false; hoInProgress = false; hoPause();
+  hoOpened = null; $("hoSlides").hidden = false; $("hoTiles").hidden = true; $("hoBack").hidden = true;
+  $("handoff").classList.add("hidden");
+  window.Space?.reset();
+  streamDone = false;
+  $("tower").innerHTML = ""; $("seq").innerHTML = ""; $("seqText").innerHTML = "";
+  $("scrubber").value = 0; $("scrubber").max = 0; $("scrubber").disabled = true; $("buffer").textContent = "";
+  $("run").textContent = "Run"; $("run").className = "primary";
+}
+
+function arm(url, payload, label) {
+  resetTrace();
+  pending = { url, payload };
+  $("where").textContent = "ready";
+  $("insp").innerHTML = `<div class="empty">${label}<br><br>Press <b>▶ Play</b> (or Space) to start. The server loads the model if needed and recomputes every layer for real.</div>`;
+  playLabel();
+}
+
+async function startTrace(url, payload) {
+  resetTrace();
+  pending = null;
+  const ctl = (controller = new AbortController());
+  $("run").textContent = "Stop";
+  $("run").className = "danger";
+  $("insp").innerHTML = `<div class="empty">Running the model…</div>`;
+  $("where").textContent = "tokenizing…";
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ctl.signal,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let detail = null;
+      try { detail = JSON.parse(text).detail; } catch {}
+      if (detail?.checks) VCDocs.showReport(detail);
+      throw new Error(detail?.checks ? `${detail.model} is not supported.` : `HTTP ${res.status}: ${text}`);
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf("\n\n")) >= 0) {
+        const data = buf.slice(0, cut).replace(/^data: /, "");
+        buf = buf.slice(cut + 2);
+        if (!data || data === "[DONE]") continue;
+        const ev = JSON.parse(data);
+        if (ev.type === "meta") {
+          meta = ev;
+          segs = segment(meta.tokens);
+          STAGES0 = buildStages(true);
+          STAGESN = buildStages(false);
+          buildTower();
+          $("modelTag").textContent = `${meta.model} · ${meta.layers} layers`;
+        } else if (ev.type === "step") {
+          steps.push(ev);
+          if (steps.length === 1) { render(); play(); }
+          else updateTransport();
+        } else if (ev.type === "error") {
+          throw new Error(ev.message);
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") $("insp").innerHTML = `<div class="empty" style="color:var(--danger)">${esc(e.message)}</div>`;
+  } finally {
+    if (controller === ctl) {  // a newer trace may have replaced this one
+      streamDone = true;
+      controller = null;
+      $("run").textContent = "Run";
+      $("run").className = "primary";
+      if (steps.length) render();
+    }
+  }
+}
+
+$("run").onclick = run;
+$("help").onclick = () => VCDocs.open("model");
+
+// ---------------------------------------------------------------- sessions
+async function loadSessionList(selected) {
+  const list = await (await fetch("/api/sessions")).json();
+  const when = (t) => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  $("source").innerHTML = `<option value="">✎ New prompt (live sampling)</option>` +
+    list.map((s) => `<option value="${s.id}">${esc(s.title.slice(0, 48))} · ${s.generations} call${s.generations > 1 ? "s" : ""} · ${when(s.updated)}</option>`).join("");
+  $("source").value = selected ?? "";
+}
+
+async function openSession(id, gen = 0) {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+  if (!res.ok) { $("insp").innerHTML = `<div class="empty">Session not found.</div>`; return; }
+  session = await res.json();
+  $("source").value = session.id;
+  $("chatLink").href = `/?session=${encodeURIComponent(session.id)}`;
+  $("chatLink").textContent = "← back to this chat";
+  $("liveCtl").classList.add("hidden");
+  $("turns").classList.remove("hidden");
+  renderTurns();
+  loadGeneration(Math.min(gen, session.generations.length - 1));
+}
+
+function turnLabel(g) {
+  const last = g.request.messages[g.request.messages.length - 1];
+  const from = last?.role === "tool" ? "tool result" : last?.role ?? "?";
+  const out = g.tool_calls ? `<span class="tc">🔧 ${g.tool_calls.map((t) => t.function.name).join(", ")}</span>`
+    : esc((g.content || "").slice(0, 28).replace(/\n/g, " ")) + ((g.content || "").length > 28 ? "…" : "");
+  return `#${g.idx + 1} ${from} → ${out}`;
+}
+
+function renderTurns() {
+  $("turns").innerHTML = `<span class="lbl">turns</span>` +
+    session.generations.map((g, i) => `${i ? '<span class="arrow">→</span>' : ""}<span class="turn ${i === currentGen ? "active" : ""}" data-i="${i}" title="${g.prompt_tokens} prompt tokens → ${g.completion_tokens} generated · ${g.finish_reason}">${turnLabel(g)}</span>`).join("") +
+    `<label><input type="checkbox" id="autoTurn"> auto-advance turns</label>`;
+  $("turns").querySelectorAll(".turn").forEach((t) => (t.onclick = () => loadGeneration(+t.dataset.i)));
+}
+
+function loadGeneration(i, start = false) {
+  currentGen = i;
+  const keepAuto = $("autoTurn")?.checked ?? false;
+  renderTurns();
+  $("autoTurn").checked = keepAuto;
+  $("turns").querySelector(".turn.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  history.replaceState(null, "", `/sim?session=${encodeURIComponent(session.id)}&gen=${i}`);
+  const payload = { session: session.id, generation: i };
+  if (start) startTrace("/api/replay", payload);
+  else arm("/api/replay", payload, `Turn ${i + 1} of ${session.generations.length} is ready to replay${session.model ? ` with <b>${esc(session.model)}</b>` : ""}.`);
+}
+
+function useLive() {
+  session = null; currentGen = null;
+  resetTrace(); pending = null;
+  $("where").textContent = "idle";
+  $("insp").innerHTML = `<div class="empty">Type a prompt and press <b>Run</b>.</div>`;
+  $("chatLink").href = "/";
+  $("chatLink").textContent = "← chat";
+  $("liveCtl").classList.remove("hidden");
+  $("turns").classList.add("hidden");
+  history.replaceState(null, "", "/sim");
+}
+
+$("source").onchange = (e) => (e.target.value ? openSession(e.target.value) : useLive());
+
+// Chats made in the other tab show up here when you come back.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") loadSessionList(session?.id ?? "");
+});
+
+// ---------------------------------------------------------------- layout: resize, fold, maximize, zoom
+// Remembered per browser: column widths, hand-off height, folded panels and folded cards.
+const ui = (() => {
+  const d = { c1: null, c2: null, hoH: null, spH: null, fold: {}, cards: [] };
+  try { return { ...d, ...JSON.parse(localStorage.getItem("vc.sim.ui") || "{}") }; } catch { return d; }
+})();
+const saveUi = () => { try { localStorage.setItem("vc.sim.ui", JSON.stringify(ui)); } catch {} };
+const foldedCards = new Set(ui.cards);
+const FOLDED_W = 30;
+
+function applyLayout() {
+  const m = document.querySelector("main").style;
+  const width = (key, col) => (ui.fold[col] ? `${FOLDED_W}px` : ui[key] ? `${ui[key]}px` : "");
+  m.setProperty("--c1", width("c1", "seq"));
+  m.setProperty("--c2", width("c2", "pipe"));
+  $("colSeq").classList.toggle("folded", !!ui.fold.seq);
+  $("colPipe").classList.toggle("folded", !!ui.fold.pipe);
+  const ho = $("handoff");
+  ho.classList.toggle("folded", !!ui.fold.ho);
+  ho.classList.toggle("sized", !!ui.hoH && !ui.fold.ho);
+  ho.style.setProperty("--hoH", ui.hoH && !ui.fold.ho ? `${ui.hoH}px` : "auto");
+  // Slides grow with the band: taller band (or maximized) = bigger, easier to read slides.
+  const maxed = document.body.dataset.max === "ho";
+  const room = maxed ? window.innerHeight - 200 : ui.hoH && !ui.fold.ho ? ui.hoH - 90 : 132;
+  ho.style.setProperty("--slideH", `${Math.max(132, Math.round(room))}px`);
+  $("space").classList.toggle("folded", !!ui.fold.sp);
+  $("space").style.setProperty("--spH", ui.spH ? `${ui.spH}px` : "");
+  document.querySelectorAll("button[data-fold]").forEach((b) => {
+    b.textContent = ui.fold[b.dataset.fold] ? "+" : "–";
+  });
+  document.querySelectorAll("button[data-max]").forEach((b) => {
+    const on = document.body.dataset.max === b.dataset.max;
+    b.textContent = on ? "⤡" : "⤢";
+    b.title = on ? "Restore (Esc)" : "Maximize (Esc to restore)";
+  });
+}
+
+function toggleFold(key) {
+  ui.fold[key] = !ui.fold[key];
+  if (ui.fold[key] && document.body.dataset.max === key) delete document.body.dataset.max;
+  saveUi(); applyLayout();
+}
+function toggleMax(key) {
+  if (document.body.dataset.max === key) delete document.body.dataset.max;
+  else { document.body.dataset.max = key; ui.fold[key] = false; saveUi(); }
+  applyLayout();
+}
+document.addEventListener("click", (e) => {
+  const f = e.target.closest("button[data-fold]"), m = e.target.closest("button[data-max]");
+  if (f) { e.stopPropagation(); toggleFold(f.dataset.fold); }
+  else if (m) { e.stopPropagation(); toggleMax(m.dataset.max); }
+  else if (e.target.closest(".col.folded h2")) toggleFold(e.target.closest(".col").id === "colSeq" ? "seq" : "pipe");
+});
+document.querySelectorAll(".col h2 .ttl").forEach((t) => {
+  const key = { colSeq: "seq", colPipe: "pipe" }[t.closest(".col").id];
+  if (key) t.ondblclick = () => toggleFold(key);
+  else t.ondblclick = () => toggleMax("insp");
+});
+
+// Drag handles: between the columns, and above the hand-off band.
+document.querySelectorAll("[data-split]").forEach((bar) => {
+  const key = bar.dataset.split;
+  bar.onpointerdown = (e) => {
+    e.preventDefault();
+    bar.setPointerCapture(e.pointerId);
+    bar.classList.add("drag");
+    const col = { c1: $("colSeq"), c2: $("colPipe"), ho: $("handoff"), sp: $("space") }[key];
+    const vert = key === "ho" || key === "sp", prop = { ho: "hoH", sp: "spH" }[key] ?? key;
+    const start = vert ? e.clientY : e.clientX;
+    const size0 = vert ? col.getBoundingClientRect().height : col.getBoundingClientRect().width;
+    const fold = { c1: "seq", c2: "pipe", ho: "ho", sp: "sp" }[key];
+    bar.onpointermove = (ev) => {
+      const d = vert ? start - ev.clientY : ev.clientX - start;
+      const max = vert ? window.innerHeight * 0.8 : window.innerWidth * 0.6;
+      ui[prop] = Math.round(Math.min(max, Math.max(vert ? 90 : 120, size0 + d)));
+      ui.fold[fold] = false;
+      applyLayout();
+    };
+    bar.onpointerup = () => { bar.onpointermove = null; bar.classList.remove("drag"); saveUi(); };
+  };
+  bar.ondblclick = () => { ui[{ ho: "hoH", sp: "spH" }[key] ?? key] = null; saveUi(); applyLayout(); };
+});
+window.addEventListener("resize", () => { applyLayout(); if (!$("zoom").hidden) fitZoom(); });
+
+// Cards: click a title to fold it (remembered by title, so it stays folded while stepping);
+// ⤢ opens the card in the zoom view.
+const cardKey = (h4) => (h4.childNodes[0]?.textContent || "").replace(/"[^"]*"|\d+/g, "#").trim();
+function decorateCards(root) {
+  root.querySelectorAll(".card > h4:first-child").forEach((h4) => {
+    if (h4.classList.contains("fold")) return;
+    const card = h4.parentElement, key = cardKey(h4);
+    if (!key) return;
+    h4.classList.add("fold");
+    card.dataset.key = key;
+    card.classList.toggle("folded", foldedCards.has(key));
+    const z = document.createElement("button");
+    z.className = "zbtn"; z.textContent = "⤢"; z.title = "Open large";
+    z.onclick = (e) => { e.stopPropagation(); openZoom(card); };
+    h4.appendChild(z);
+    h4.onclick = (e) => {
+      if (e.target.closest("button, a, select, input")) return;
+      const f = card.classList.toggle("folded");
+      f ? foldedCards.add(key) : foldedCards.delete(key);
+      ui.cards = [...foldedCards]; saveUi();
+    };
+  });
+  if (zoomKey) followZoom(root);
+}
+
+// Zoom view: the real card (same canvases, same hover readouts), scaled up. It follows
+// playback: on every stage the card with the same title takes its place.
+// Scaled with a transform (not CSS zoom) so the cards' hover readouts keep exact coordinates;
+// the wrapper takes the scaled size so the view scrolls correctly.
+let zoomKey = null, zoomCard = null, zoomGhost = null, zoomLevel = 1, zoomW = 0;
+const zWrap = h("div", "", "zwrap");
+const sizeWrap = () => {
+  if (!zoomCard) return;
+  zWrap.style.width = `${zoomW * zoomLevel}px`;
+  zWrap.style.height = `${zoomCard.offsetHeight * zoomLevel}px`;
+};
+const zObserver = new ResizeObserver(sizeWrap);
+function setZoom(z) {
+  zoomLevel = Math.min(6, Math.max(0.5, z));
+  zWrap.style.setProperty("--z", zoomLevel);
+  $("zPct").textContent = `${Math.round(zoomLevel * 100)}%`;
+  sizeWrap();
+}
+const fitZoom = () => setZoom(Math.min(4, ($("zBody").clientWidth - 40) / (zoomW || 600)));
+function placeInZoom(card) {
+  zoomCard?.remove();
+  zoomGhost?.remove();
+  zoomGhost = h("div", `${esc(zoomKey)}: shown in the large view`, "card zghost");
+  card.replaceWith(zoomGhost);
+  card.classList.remove("folded");
+  card.style.width = `${zoomW}px`;
+  if (!zWrap.isConnected) $("zBody").appendChild(zWrap);
+  zWrap.appendChild(card);
+  if (zoomCard) zObserver.unobserve(zoomCard);
+  zoomCard = card;
+  zObserver.observe(card);
+  sizeWrap();
+  $("zTitle").textContent = card.querySelector("h4")?.childNodes[0]?.textContent ?? "";
+  $("zNote").textContent = "";
+}
+function openZoom(card) {
+  zoomKey = card.dataset.key;
+  zoomW = Math.round(card.getBoundingClientRect().width);
+  $("zoom").hidden = false;
+  placeInZoom(card);
+  fitZoom();
+}
+function followZoom(root) {
+  const next = [...root.querySelectorAll(".card[data-key]")].find((c) => c.dataset.key === zoomKey);
+  if (next) placeInZoom(next);
+  else $("zNote").textContent = " · not part of this stage, showing the last one";
+}
+function closeZoom() {
+  if (zoomCard) {
+    zObserver.unobserve(zoomCard);
+    zoomCard.style.width = "";
+    if (zoomGhost?.isConnected) zoomGhost.replaceWith(zoomCard); else zoomCard.remove();
+  }
+  zoomGhost?.remove();
+  zoomKey = zoomCard = zoomGhost = null;
+  $("zoom").hidden = true;
+}
+$("zClose").onclick = closeZoom;
+$("zIn").onclick = () => setZoom(zoomLevel * 1.25);
+$("zOut").onclick = () => setZoom(zoomLevel / 1.25);
+$("zFit").onclick = fitZoom;
+$("zoom").onclick = (e) => { if (e.target === $("zoom")) closeZoom(); };
+$("zBody").addEventListener("wheel", (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  setZoom(zoomLevel * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+}, { passive: false });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("zoom").hidden) closeZoom();
+  else if (document.body.dataset.max) { delete document.body.dataset.max; applyLayout(); }
+}, true);
+applyLayout();
+
+const params = new URLSearchParams(location.search);
+loadSessionList(params.get("session")).then(() => {
+  if (params.get("session")) openSession(params.get("session"), +(params.get("gen") ?? 0));
+  else if (params.get("q")) $("prompt").value = params.get("q");
+});
+</script>
+<script type="module" src="/static/space.js"></script>
+</body>
+</html>

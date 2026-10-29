@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VirtualCuda</title>
+<style>
+  :root {
+    --bg: #0d0f12;
+    --panel: #14171c;
+    --panel-2: #1a1e25;
+    --border: #262b34;
+    --text: #e6e8eb;
+    --muted: #8a919c;
+    --faint: #4b525d;
+    --accent: #5eead4;
+    --accent-dim: #134e4a;
+    --user: #1e293b;
+    --tool: #a78bfa;
+    --danger: #f87171;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); font: 14px/1.55 var(--sans);
+    display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+  }
+  a { color: var(--accent); }
+
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font: 600 15px var(--mono); margin: 0; letter-spacing: .02em; }
+  header h1 span { color: var(--accent); }
+  .chip {
+    font: 12px var(--mono); color: var(--muted); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .deep {
+    margin-left: auto; font: 12px var(--mono); color: var(--accent); text-decoration: none;
+    border: 1px solid var(--accent-dim); padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .deep:hover { background: var(--accent-dim); }
+  .deep.off { color: var(--faint); border-color: var(--border); pointer-events: none; }
+  .status { margin-left: 12px; display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .dot.busy { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+  .dot.err { background: var(--danger); }
+
+  main { display: grid; grid-template-columns: 290px 1fr; min-height: 0; }
+
+  /* ---------- sidebar ---------- */
+  aside {
+    border-right: 1px solid var(--border); background: var(--panel);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .side-top { padding: 12px; border-bottom: 1px solid var(--border); }
+  .side-top button { width: 100%; }
+  .drawer h2 { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+  #chats { flex: 1; overflow-y: auto; padding: 8px; min-height: 80px; }
+  #chats .none { color: var(--faint); font: 12px var(--mono); padding: 8px; }
+  .item {
+    position: relative; padding: 8px 64px 8px 10px; border-radius: 6px; cursor: pointer;
+    border-left: 2px solid transparent; margin-bottom: 2px;
+  }
+  .item:hover { background: var(--panel-2); }
+  .item.active { background: var(--panel-2); border-left-color: var(--accent); }
+  .item .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+  .item .m { font: 11px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .acts { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; opacity: 0; }
+  .item:hover .acts, .item.active .acts { opacity: 1; }
+  .item .acts a, .item .acts button {
+    font: 12px var(--mono); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--muted); text-decoration: none; cursor: pointer; line-height: 1.4;
+  }
+  .item .acts a { color: var(--accent); border-color: var(--accent-dim); }
+  .item .acts a:hover { background: var(--accent-dim); }
+  .item .acts button:hover { color: var(--danger); border-color: var(--danger); }
+
+  /* ---------- settings drawer (gear) ---------- */
+  .gear {
+    font-size: 16px; line-height: 1; padding: 5px 8px; background: transparent; color: var(--muted);
+  }
+  .gear:hover, .gear.on { color: var(--accent); border-color: var(--accent-dim); }
+  #modelChip { cursor: pointer; }
+  #modelChip:hover { color: var(--text); border-color: var(--muted); }
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; display: none; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 100vw); z-index: 21;
+    background: var(--panel); border-left: 1px solid var(--border); box-shadow: -12px 0 30px rgba(0,0,0,.4);
+    display: flex; flex-direction: column; transform: translateX(100%); transition: transform .2s ease;
+  }
+  body.settings-open .drawer { transform: none; }
+  body.settings-open .scrim { display: block; }
+  .drawer-head {
+    display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); font: 600 13px var(--mono);
+  }
+  .drawer-head button { padding: 2px 9px; }
+  .settings-body { padding: 16px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+  .note { font: 11px var(--mono); color: var(--faint); margin-top: 6px; }
+  .note a { color: var(--accent); }
+  #help { font: 600 13px var(--mono); padding: 4px 9px; }
+  .support { margin-top: 10px; font: 12px var(--mono); cursor: pointer; }
+  .support.yes { color: #4ade80; } .support.no { color: var(--danger); }
+  .support span { color: var(--muted); text-decoration: underline; margin-left: 6px; }
+
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0 0; font: 12px var(--mono); }
+  dt { color: var(--muted); }
+  dd { margin: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  label { display: block; font: 12px var(--mono); color: var(--muted); margin-bottom: 10px; }
+  label .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  label output { color: var(--text); }
+  label.check { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; color: var(--text); cursor: pointer; }
+  label.check small { display: block; color: var(--muted); font-size: 11px; line-height: 1.35; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); margin-top: 2px; }
+  select, input[type=text] {
+    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font: 12px var(--mono);
+  }
+  .loadrow { display: flex; gap: 6px; margin-top: 6px; }
+  .loadrow input { flex: 1; min-width: 0; }
+  textarea.system {
+    width: 100%; min-height: 70px; resize: vertical; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: 12px var(--mono);
+  }
+  button {
+    font: 13px var(--sans); border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); padding: 7px 12px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.small { padding: 5px 10px; font-size: 12px; }
+  button.primary { background: var(--accent); color: #042f2e; border-color: var(--accent); font-weight: 600; }
+  button.primary:disabled { opacity: .4; cursor: default; }
+  button.stop { background: transparent; color: var(--danger); border-color: var(--danger); }
+
+  /* ---------- chat ---------- */
+  .chat { display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+  #log { overflow-y: auto; padding: 24px 0; }
+  .msg { max-width: 780px; margin: 0 auto 18px; padding: 0 20px; }
+  .msg .who { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 4px; }
+  .msg.assistant .who { color: var(--accent); }
+  .msg .body { white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user .body { background: var(--user); padding: 10px 14px; border-radius: 10px; display: inline-block; max-width: 100%; }
+  .msg .stats { font: 11px var(--mono); color: var(--muted); margin-top: 6px; }
+  .msg .stats a { text-decoration: none; margin-left: 6px; }
+  .msg .error { color: var(--danger); font: 12px var(--mono); }
+  .call {
+    font: 12px var(--mono); border: 1px solid #4c1d95; background: rgba(167,139,250,.07);
+    border-radius: 8px; padding: 8px 12px; margin-top: 6px; white-space: pre-wrap; word-break: break-word;
+  }
+  .call .k { color: var(--tool); }
+  .call .res { color: var(--text); margin-top: 4px; }
+  .cursor { display: inline-block; width: 7px; height: 1em; background: var(--accent); vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .empty { max-width: 780px; margin: 15vh auto 0; padding: 0 20px; color: var(--muted); text-align: center; }
+  .empty b { color: var(--text); font-family: var(--mono); }
+
+  form { border-top: 1px solid var(--border); background: var(--panel); padding: 12px 16px; }
+  .composer { max-width: 780px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+  #input {
+    flex: 1; resize: none; max-height: 200px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 14px/1.4 var(--sans);
+  }
+  #input:focus, textarea.system:focus, select:focus, input[type=text]:focus { outline: none; border-color: var(--accent); }
+
+  /* attachments: images & audio for multimodal models */
+  .mm { padding: 6px 9px; font-size: 15px; line-height: 1; background: var(--panel-2); color: var(--muted); }
+  .mm:hover { color: var(--text); }
+  .mm.rec { color: var(--danger); border-color: var(--danger); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(248,113,113,.18); } }
+  .mm[hidden] { display: none; }
+  .tray { max-width: 780px; margin: 0 auto 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tray:empty { display: none; }
+  .att {
+    position: relative; display: flex; align-items: center; gap: 8px; padding: 4px 26px 4px 4px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); font: 11px var(--mono); color: var(--muted);
+  }
+  .att img { width: 44px; height: 44px; object-fit: cover; border-radius: 5px; display: block; }
+  .att .wave { width: 44px; height: 44px; display: grid; place-items: center; font-size: 20px; color: var(--accent); }
+  .att button { position: absolute; top: 2px; right: 2px; padding: 0 6px; font-size: 12px; background: none; border: none; color: var(--muted); }
+  .att button:hover { color: var(--danger); }
+  .media { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; justify-content: flex-end; }
+  .msg.user { text-align: right; }
+  .msg.user .who, .msg.user .stats { text-align: left; }
+  .msg.user .body { text-align: left; }
+  .media img { max-width: 260px; max-height: 200px; border-radius: 10px; border: 1px solid var(--border); display: block; }
+  .media audio { height: 36px; max-width: 280px; }
+
+  @media (max-width: 720px) {
+    main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+    .model-chip { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Virtual<span>Cuda</span></h1>
+  <span class="chip model-chip" id="modelChip" title="Chat settings">loading…</span>
+  <a class="deep off" id="simLink" href="/sim" title="Bird's-eye replay of this chat, layer by layer">Deep dive this chat →</a>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">connecting</span></div>
+  <button class="gear" id="help" type="button" title="Supported models">?</button>
+  <button class="gear" id="gear" type="button" title="Chat settings: model, tools, temperature…">⚙</button>
+</header>
+
+<main>
+  <aside>
+    <div class="side-top"><button id="newChat" type="button">+ New chat</button></div>
+    <div id="chats"></div>
+  </aside>
+
+  <div class="chat">
+    <div id="log"></div>
+    <form id="form">
+      <div class="tray" id="tray"></div>
+      <div class="composer">
+        <button class="mm" id="attach" type="button" title="Attach an image or audio file" hidden>📎</button>
+        <button class="mm" id="mic" type="button" title="Record audio from the microphone" hidden>🎤</button>
+        <input type="file" id="file" accept="image/*,audio/*" multiple hidden>
+        <textarea id="input" rows="1" placeholder="Message the model…  (Enter to send, Shift+Enter for newline)"></textarea>
+        <button class="primary" id="send" type="submit">Send</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer" role="dialog" aria-label="Chat settings">
+  <div class="drawer-head"><span>⚙ Chat settings</span><button type="button" id="closeSettings" title="Close (Esc)">×</button></div>
+      <div class="settings-body">
+        <section>
+          <h2>Model</h2>
+          <select id="modelSelect"></select>
+          <div class="loadrow">
+            <input type="text" id="modelId" placeholder="any HF repo id">
+            <button class="small" id="loadModel" type="button" title="Download (if needed) and load">Load</button>
+          </div>
+          <div class="support" id="support"></div>
+          <dl id="arch"></dl>
+          <div class="note">Switching model starts a new chat: recordings are token ids, which only mean something to the model that made them.
+            <a href="#" id="guideLink">Which models are supported?</a></div>
+        </section>
+        <section>
+          <h2>Tools</h2>
+          <div id="tools"></div>
+        </section>
+        <section>
+          <h2>Generation</h2>
+          <label><div class="row"><span>temperature</span><output id="tempOut">0.7</output></div>
+            <input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.7"></label>
+          <label><div class="row"><span>top_p</span><output id="topPOut">0.9</output></div>
+            <input type="range" id="topP" min="0.05" max="1" step="0.05" value="0.9"></label>
+          <label><div class="row"><span>max_tokens</span><output id="maxOut">512</output></div>
+            <input type="range" id="maxTok" min="16" max="2048" step="16" value="512"></label>
+        </section>
+        <section>
+          <h2>System prompt</h2>
+          <textarea class="system" id="system" placeholder="(optional)"></textarea>
+        </section>
+      </div>
+</div>
+
+<script src="/static/docs.js"></script>
+<script src="/static/livereload.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const log = $("log"), input = $("input"), sendBtn = $("send");
+const MAX_TOOL_ROUNDS = 5;
+const EMPTY = `<div class="empty" id="empty">Talk to the model. Every chat is saved on the left;<br>
+  open <b>Deep dive</b> on any of them to replay it layer by layer.<br><br>
+  <b>POST /v1/chat/completions</b> (OpenAI-compatible, with tools)</div>`;
+let history = [];
+let modelId = null;
+let modalities = ["text"];   // what the loaded model accepts (from /api/info)
+let toolSchemas = [];
+let controller = null;
+let sessionId = newSessionId();
+let sessionSaved = false;   // has the server recorded anything for sessionId yet?
+
+function newSessionId() {
+  return "chat-" + new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "") + "-" + Math.random().toString(36).slice(2, 7);
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function setStatus(state, text) {
+  $("dot").className = "dot " + state;
+  $("statusText").textContent = text;
+}
+
+for (const [slider, out] of [["temp", "tempOut"], ["topP", "topPOut"], ["maxTok", "maxOut"]]) {
+  $(slider).addEventListener("input", () => { $(out).textContent = $(slider).value; });
+}
+
+// ---------------------------------------------------------------- model + tools
+async function loadInfo() {
+  try {
+    const info = await (await fetch("/api/info")).json();
+    modelId = info.model;
+    modalities = info.modalities ?? ["text"];
+    $("attach").hidden = !modalities.some((m) => m !== "text");
+    $("mic").hidden = !modalities.includes("audio");
+    $("file").accept = [modalities.includes("image") && "image/*", modalities.includes("audio") && "audio/*"].filter(Boolean).join(",");
+    $("modelChip").textContent = info.model;
+    const rows = [
+      ["arch", info.architecture.replace("ForCausalLM", "")],
+      ["params", (info.parameters / 1e9).toFixed(2) + "B"],
+      ["layers", info.layers],
+      ["hidden", info.hidden_size],
+      ["mlp", info.intermediate_size],
+      ["heads", `${info.attention_heads} q / ${info.kv_heads} kv`],
+      ["vocab", info.vocab_size.toLocaleString()],
+      ["device", `${info.device} · ${info.dtype}`],
+    ];
+    $("arch").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    const [models, report] = await Promise.all([fetch("/api/models").then((r) => r.json()), fetch("/api/compat").then((r) => r.json())]);
+    $("modelSelect").innerHTML = models.cached.map((m) =>
+      `<option value="${m.id}" ${m.id === models.loaded ? "selected" : ""} ${m.supported ? "" : "disabled"} title="${esc(m.reason ?? "")}">` +
+      `${m.id} (${m.size_gb} GB)${m.supported ? "" : " · not supported"}</option>`).join("");
+    $("support").className = "support " + (report.supported ? "yes" : "no");
+    $("support").innerHTML = `${report.supported ? "✓ Supported" : "✗ Not supported"}<span>self-test report</span>`;
+    setStatus("ok", "ready");
+  } catch {
+    setStatus("err", "server unreachable");
+  }
+}
+
+// fresh: start a new chat afterwards (a conversation's token ids only make sense for one model)
+// While a model loads, the chat stays visible but sending is blocked (it would hit the old model).
+let modelLoading = null;
+
+async function switchModel(id, fresh = true) {
+  if (!id || id === modelId || modelLoading === id) return;
+  modelLoading = id;
+  setStatus("busy", `loading ${id}…`);
+  $("modelChip").textContent = `loading ${id}…`;
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Loading…";
+  try {
+    const res = await fetch("/api/models/load", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: id }),
+    });
+    if (modelLoading !== id) return;  // another chat asked for a different model meanwhile
+    const failed = !res.ok;
+    if (failed) {
+      const { detail } = await res.json();
+      detail?.checks ? VCDocs.showReport(detail) : alert(detail);
+    }
+    await loadInfo();
+    if (failed) setStatus("err", "model not supported");
+    else if (fresh) newChat();
+  } finally {
+    if (modelLoading === id) {
+      modelLoading = null;
+      sendBtn.disabled = false;
+      sendBtn.textContent = "Send";
+    }
+  }
+}
+
+$("modelSelect").onchange = (e) => { if (!controller) switchModel(e.target.value); };
+$("loadModel").onclick = () => { if (!controller) switchModel($("modelId").value.trim()); };
+
+// Tools are off unless you turn them on in chat settings; your choice is remembered in this browser.
+const TOOLS_KEY = "vc.enabledTools";
+function savedTools() {
+  try { return new Set(JSON.parse(localStorage.getItem(TOOLS_KEY)) ?? []); } catch { return new Set(); }
+}
+
+async function loadTools() {
+  toolSchemas = await (await fetch("/api/tools")).json();
+  const on = savedTools();
+  $("tools").innerHTML = toolSchemas.map((t, i) =>
+    `<label class="check"><input type="checkbox" data-i="${i}" ${on.has(t.function.name) ? "checked" : ""}><span>${t.function.name}<small>${t.function.description}</small></span></label>`).join("");
+  $("tools").onchange = () => {
+    try { localStorage.setItem(TOOLS_KEY, JSON.stringify(enabledTools().map((t) => t.function.name))); } catch {}
+  };
+}
+
+function enabledTools() {
+  return [...$("tools").querySelectorAll("input:checked")].map((c) => toolSchemas[+c.dataset.i]);
+}
+
+// ---------------------------------------------------------------- chat list
+const when = (t) => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+async function refreshChats() {
+  const list = await (await fetch("/api/sessions")).json();
+  sessionSaved = list.some((s) => s.id === sessionId);
+  $("chats").innerHTML = list.length ? list.map((s) => `
+    <div class="item ${s.id === sessionId ? "active" : ""}" data-id="${esc(s.id)}">
+      <div class="t">${esc(s.title)}</div>
+      <div class="m">${s.generations} call${s.generations > 1 ? "s" : ""} · ${when(s.updated)} · ${esc(s.model.split("/").pop())}</div>
+      <div class="acts">
+        <a href="/sim?session=${encodeURIComponent(s.id)}" title="Deep dive: replay this chat layer by layer">⤢ dive</a>
+        <button type="button" data-del title="Delete this chat">×</button>
+      </div>
+    </div>`).join("") : `<div class="none">No chats yet.</div>`;
+  $("chats").querySelectorAll(".item").forEach((el) => {
+    el.onclick = (e) => {
+      if (e.target.closest("a")) return;
+      if (e.target.closest("[data-del]")) { deleteChat(el.dataset.id); return; }
+      openChat(el.dataset.id);
+    };
+  });
+  syncLinks();
+}
+
+function syncLinks() {
+  const link = $("simLink");
+  link.href = `/sim?session=${encodeURIComponent(sessionId)}`;
+  link.classList.toggle("off", !sessionSaved);
+  history.length && sessionSaved
+    ? window.history.replaceState(null, "", `/?session=${encodeURIComponent(sessionId)}`)
+    : window.history.replaceState(null, "", "/");
+}
+
+async function deleteChat(id) {
+  if (!confirm("Delete this chat and its recording?")) return;
+  await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (id === sessionId) newChat();
+  else refreshChats();
+}
+
+// ---------------------------------------------------------------- rendering
+// content: a string, or OpenAI content parts (text / image_url / input_audio)
+function addMessage(role, content, who) {
+  $("empty")?.remove();
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  el.innerHTML = `<div class="who">${who ?? (role === "user" ? "you" : "model")}</div><div class="media"></div><div class="body"></div>`;
+  const parts = Array.isArray(content) ? content : [{ type: "text", text: content ?? "" }];
+  const media = el.querySelector(".media");
+  for (const p of parts) {
+    if (p.type === "image_url") {
+      const img = document.createElement("img");
+      img.src = p.image_url.url;
+      media.appendChild(img);
+    } else if (p.type === "input_audio") {
+      const au = document.createElement("audio");
+      au.controls = true;
+      au.src = p.input_audio.url ?? `data:audio/wav;base64,${p.input_audio.data}`;
+      media.appendChild(au);
+    }
+  }
+  if (!media.children.length) media.remove();
+  const text = parts.filter((p) => p.type === "text").map((p) => p.text).join("");
+  el.querySelector(".body").textContent = text;
+  if (!text && role === "user") el.querySelector(".body").remove();
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+// ---------------------------------------------------------------- attachments (images, audio)
+// Audio of any format the browser can decode is converted here to 16 kHz mono 16-bit WAV, the
+// rate the audio encoder's feature extractor uses. What you hear in the chat is what it gets.
+let attachments = [];
+const RATE = 16000;
+
+async function toWav16k(blob) {
+  const ctx = new AudioContext();
+  const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+  ctx.close();
+  const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * RATE), RATE);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const buf = new ArrayBuffer(44 + pcm.length * 2), v = new DataView(buf);
+  const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); str(8, "WAVEfmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, RATE, true); v.setUint32(28, RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  pcm.forEach((s, i) => v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true));
+  let bin = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { data: btoa(bin), seconds: decoded.duration };
+}
+
+const readDataUrl = (file) => new Promise((ok, err) => {
+  const r = new FileReader();
+  r.onload = () => ok(r.result);
+  r.onerror = err;
+  r.readAsDataURL(file);
+});
+
+async function addFile(file) {
+  try {
+    if (file.type.startsWith("image/") && modalities.includes("image")) {
+      attachments.push({ type: "image_url", image_url: { url: await readDataUrl(file) }, label: file.name });
+    } else if (file.type.startsWith("audio/") && modalities.includes("audio")) {
+      const { data, seconds } = await toWav16k(file);
+      attachments.push({ type: "input_audio", input_audio: { data, format: "wav" }, label: `${file.name || "recording"} · ${seconds.toFixed(1)} s` });
+    } else {
+      alert(`${modelId} can't take ${file.type || "this file"}.`);
+    }
+  } catch (e) {
+    alert(`Couldn't read ${file.name}: ${e.message}`);
+  }
+  renderTray();
+}
+
+function renderTray() {
+  $("tray").innerHTML = attachments.map((a, i) => `<div class="att">${a.type === "image_url"
+    ? `<img src="${a.image_url.url}" alt="">` : `<span class="wave">∿</span>`}<span>${esc(a.label)}</span><button type="button" data-i="${i}" title="Remove">×</button></div>`).join("");
+  $("tray").querySelectorAll("button").forEach((b) => (b.onclick = () => { attachments.splice(+b.dataset.i, 1); renderTray(); }));
+}
+
+$("attach").onclick = () => $("file").click();
+$("file").onchange = async (e) => { for (const f of e.target.files) await addFile(f); e.target.value = ""; };
+input.addEventListener("paste", (e) => {
+  for (const item of e.clipboardData?.items ?? []) if (item.kind === "file") { e.preventDefault(); addFile(item.getAsFile()); }
+});
+
+let recorder = null;
+$("mic").onclick = async () => {
+  if (recorder) { recorder.stop(); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { alert(`Microphone unavailable: ${e.message}`); return; }
+  const chunks = [];
+  recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    $("mic").classList.remove("rec");
+    $("mic").title = "Record audio from the microphone";
+    recorder = null;
+    const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
+    await addFile(new File([blob], "recording", { type: blob.type }));
+  };
+  recorder.start();
+  $("mic").classList.add("rec");
+  $("mic").title = "Stop recording";
+};
+
+function addToolCall(el, call) {
+  const div = document.createElement("div");
+  div.className = "call";
+  let args = call.function.arguments;
+  try { args = JSON.stringify(JSON.parse(args)); } catch {}
+  div.innerHTML = `<span class="k">tool_call</span> ${esc(call.function.name)}(${esc(args)})<div class="res">…</div>`;
+  el.appendChild(div);
+  return div.querySelector(".res");
+}
+
+function addStats(el, parts, gen) {
+  const stats = document.createElement("div");
+  stats.className = "stats";
+  stats.textContent = parts.filter(Boolean).join(" · ");
+  if (gen != null) {
+    const a = document.createElement("a");
+    a.href = `/sim?session=${encodeURIComponent(sessionId)}&gen=${gen}`;
+    a.textContent = "▶ replay";
+    a.title = "Watch this exact generation layer by layer";
+    stats.appendChild(a);
+  }
+  el.appendChild(stats);
+}
+
+function setBusy(busy) {
+  sendBtn.textContent = busy ? "Stop" : "Send";
+  sendBtn.className = busy ? "stop" : "primary";
+  sendBtn.type = busy ? "button" : "submit";
+  setStatus(busy ? "busy" : "ok", busy ? "generating" : "ready");
+}
+
+// ---------------------------------------------------------------- reopen a saved chat
+// The last call's request holds the whole conversation; its own output is the final assistant
+// message. Call #g produced the assistant message at index len(g.request.messages).
+async function openChat(id) {
+  if (controller) controller.abort();
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+  if (!res.ok) { newChat(); return; }
+  const s = await res.json();
+
+  sessionId = id;
+  sessionSaved = true;
+  log.innerHTML = "";
+  $("system").value = "";
+  const gens = s.generations;
+  const last = gens[gens.length - 1];
+  const full = [...last.request.messages,
+    { role: "assistant", content: last.content || null, ...(last.tool_calls ? { tool_calls: last.tool_calls } : {}) }];
+  const genAt = {};
+  for (const g of gens) genAt[g.request.messages.length] = g;
+
+  const results = {};
+  full.forEach((m, i) => {
+    if (m.role === "system") { $("system").value = m.content; return; }
+    if (m.role === "user") { addMessage("user", m.content); return; }
+    if (m.role === "tool") { if (results[m.tool_call_id]) results[m.tool_call_id].textContent = "→ " + m.content; return; }
+    const el = addMessage("assistant", m.content || "");
+    if (!m.content && m.tool_calls) el.querySelector(".body").remove();
+    for (const c of m.tool_calls ?? []) results[c.id] = addToolCall(el, c);
+    const g = genAt[i];
+    if (g) addStats(el, [`${g.prompt_tokens} prompt → ${g.completion_tokens} tokens`,
+      g.duration > 0 ? `${(g.completion_tokens / g.duration).toFixed(1)} tok/s` : "", g.finish_reason], g.idx);
+  });
+  history = full.filter((m) => m.role !== "system");
+  log.scrollTop = log.scrollHeight;
+  refreshChats();
+  input.focus();
+  // The chat is already on screen; bring its model in behind it.
+  if (s.model !== modelId) switchModel(s.model, false);
+}
+
+// ---------------------------------------------------------------- one model call
+async function complete(el) {
+  const body = el.querySelector(".body");
+  const cursor = document.createElement("span");
+  cursor.className = "cursor";
+  body.after(cursor);
+
+  const system = $("system").value.trim();
+  const messages = system ? [{ role: "system", content: system }, ...history] : history;
+  const tools = enabledTools();
+
+  const t0 = performance.now();
+  let tFirst = null, reply = "", usage = null, finish = null, xSession = null;
+  const calls = [];
+
+  try {
+    const res = await fetch("/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Session-Id": sessionId },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: modelId, messages, stream: true,
+        tools: tools.length ? tools : undefined,
+        stream_options: { include_usage: true },
+        temperature: +$("temp").value, top_p: +$("topP").value, max_tokens: +$("maxTok").value,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const events = buf.split("\n\n");
+      buf = events.pop();
+      for (const ev of events) {
+        const data = ev.replace(/^data: /, "").trim();
+        if (!data || data === "[DONE]") continue;
+        const msg = JSON.parse(data);
+        if (msg.usage) usage = msg.usage;
+        if (msg.x_session) xSession = msg.x_session;
+        const choice = msg.choices[0];
+        if (!choice) continue;
+        if (choice.finish_reason) finish = choice.finish_reason;
+        for (const tc of choice.delta?.tool_calls ?? []) calls[tc.index] = tc;
+        const piece = choice.delta?.content;
+        if (piece) {
+          tFirst ??= performance.now();
+          reply += piece;
+          body.textContent = reply;
+          log.scrollTop = log.scrollHeight;
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name === "AbortError") finish = "stopped";
+    else {
+      const err = document.createElement("div");
+      err.className = "error";
+      err.textContent = e.message;
+      el.appendChild(err);
+    }
+  } finally {
+    cursor.remove();
+  }
+  if (!reply && calls.length) body.remove();
+
+  const genSecs = (performance.now() - (tFirst ?? t0)) / 1000;
+  addStats(el, [
+    usage && `${usage.prompt_tokens} prompt → ${usage.completion_tokens} tokens`,
+    usage && tFirst && genSecs > 0.2 && `${(usage.completion_tokens / genSecs).toFixed(1)} tok/s`,  // short replies can arrive in one chunk
+    tFirst && `ttft ${Math.round(tFirst - t0)} ms`,
+    finish,
+  ], xSession?.generation);
+  return { reply, calls: calls.filter(Boolean), finish };
+}
+
+// ---------------------------------------------------------------- turn = model ⇄ tools loop
+async function send(text) {
+  const content = attachments.length
+    ? [...attachments.map(({ label, ...p }) => p), ...(text ? [{ type: "text", text }] : [])]
+    : text;
+  attachments = [];
+  renderTray();
+  history.push({ role: "user", content });
+  addMessage("user", content);
+  controller = new AbortController();
+  setBusy(true);
+
+  try {
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const el = addMessage("assistant", "");
+      const { reply, calls, finish } = await complete(el);
+      if (!calls.length) {
+        if (reply) history.push({ role: "assistant", content: reply });
+        break;
+      }
+      history.push({ role: "assistant", content: reply || null, tool_calls: calls.map(({ index, ...c }) => c) });
+      for (const call of calls) {
+        const out = addToolCall(el, call);
+        const res = await fetch("/api/tools/run", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: call.function.name, arguments: call.function.arguments }),
+        });
+        const { result } = await res.json();
+        out.textContent = "→ " + result;
+        history.push({ role: "tool", tool_call_id: call.id, content: result });
+      }
+      if (finish === "stopped" || controller.signal.aborted) break;
+    }
+  } finally {
+    controller = null;
+    setBusy(false);
+    refreshChats();
+  }
+}
+
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if ((!text && !attachments.length) || controller || modelLoading) return;
+  input.value = "";
+  input.style.height = "";
+  send(text);
+});
+
+sendBtn.addEventListener("click", () => { if (controller) controller.abort(); });
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); }
+});
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = input.scrollHeight + "px";
+});
+
+function newChat() {
+  if (controller) controller.abort();
+  history = [];
+  sessionId = newSessionId();
+  sessionSaved = false;
+  log.innerHTML = EMPTY;
+  refreshChats();
+  input.focus();
+}
+$("newChat").addEventListener("click", newChat);
+
+function toggleSettings(open = !document.body.classList.contains("settings-open")) {
+  document.body.classList.toggle("settings-open", open);
+  $("gear").classList.toggle("on", open);
+}
+$("gear").onclick = () => toggleSettings();
+$("help").onclick = () => VCDocs.open("model");
+$("support").onclick = () => VCDocs.open("model");
+$("guideLink").onclick = (e) => { e.preventDefault(); VCDocs.open("guide"); };
+$("modelChip").onclick = () => toggleSettings(true);
+$("closeSettings").onclick = $("scrim").onclick = () => toggleSettings(false);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") toggleSettings(false); });
+
+(async () => {
+  log.innerHTML = EMPTY;
+  await Promise.all([loadInfo(), loadTools()]);
+  const open = new URLSearchParams(location.search).get("session");
+  if (open) openChat(open);
+  else refreshChats();
+  input.focus();
+})();
+</script>
+</body>
+</html>
