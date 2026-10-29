@@ -156,11 +156,20 @@ try {
 }
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#0d0f12");
-const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 50);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 400);
 const HOME = new THREE.Vector3(2.9, 1.7, 3.4);
 camera.position.copy(HOME);
 const controls = renderer && new OrbitControls(camera, canvas);
 if (controls) { controls.enableDamping = true; controls.dampingFactor = 0.08; controls.autoRotateSpeed = 0.8; }
+
+// Smooth camera moves for the zoom / focus / fit buttons; grabbing the view cancels them.
+let camGoal = null;
+const flyTo = (target, position) => (camGoal = { target: target.clone(), position: position.clone() });
+controls?.addEventListener("start", () => (camGoal = null));
+function panZ(dz) {
+  camera.position.z += dz; controls.target.z += dz;
+  if (camGoal) { camGoal.position.z += dz; camGoal.target.z += dz; }
+}
 
 // ---------------------------------------------------------------- style: palette + trails
 // Remembered per browser (ui.spStyle) and saved in exports, so an imported file looks the same.
@@ -268,7 +277,10 @@ scene.add(brain.group, journey.group);
 
 // ---------------------------------------------------------------- brain
 const brainX = (L, i) => (L > 1 ? (i / (L - 1)) * 2 - 1 : 0);
-const tokZ = (n, s) => (n > 1 ? (s / (n - 1)) * 2 - 1 : 0);
+// Tokens sit at a fixed spacing along z, so the brain grows as the reply does.
+const DZ = 0.09;
+const tokZ = (s) => -1 + s * DZ;
+const brainDepth = (step) => Math.max(step * DZ, 0.2);
 
 function buildBrain(D) {
   clear(brain.group);
@@ -284,7 +296,7 @@ function buildBrain(D) {
     first[si][li] = p;
     for (let j = 0; j < l.length; j += 2, p++) {
       const nrn = l[j], a = l[j + 1], t = Math.abs(a) / (maxA[li] || 1);
-      c.pos.set([brainX(L, li), (nrn / D.model.mlp_n[li]) * 2 - 1, tokZ(n, si)], 3 * p);
+      c.pos.set([brainX(L, li), (nrn / D.model.mlp_n[li]) * 2 - 1, tokZ(si)], 3 * p);
       const col = (style.brainBy === "layer" ? pathColor(L > 1 ? li / (L - 1) : 0) : style.brainBy === "token" ? tokColor(si, n, 0.55)
         : a >= 0 ? POS.clone() : NEG.clone()).lerp(WHITE, 0.45 * t * t);
       c.color.set([col.r, col.g, col.b], 3 * p);
@@ -293,13 +305,17 @@ function buildBrain(D) {
     }
   }));
   Object.assign(brain, { cloud: c, info, L, n, D });
-  frame(brain.group);
-  // floor rails, one per layer
+  // box + floor rails (one per layer) span z 0..1 here; applyCursor stretches them to the current token
+  brain.grow = new THREE.Group();
+  const bg = new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 1)).translate(0, 0, 0.5);
+  brain.grow.add(new THREE.LineSegments(bg, new THREE.LineBasicMaterial({ color: "#2f3540" })));
   const rails = [];
-  for (let i = 0; i < L; i++) rails.push(brainX(L, i), -1, -1, brainX(L, i), -1, 1);
+  for (let i = 0; i < L; i++) rails.push(brainX(L, i), -1, 0, brainX(L, i), -1, 1);
   const rg = new THREE.BufferGeometry();
   rg.setAttribute("position", new THREE.Float32BufferAttribute(rails, 3));
-  brain.group.add(new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: "#1d2229" })));
+  brain.grow.add(new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: "#1d2229" })));
+  brain.grow.position.z = -1;
+  brain.group.add(brain.grow);
   // the "now" plane sweeping through tokens
   brain.now = new THREE.Mesh(new THREE.PlaneGeometry(2, 2),
     new THREE.MeshBasicMaterial({ color: style.p0, transparent: true, opacity: 0.045, depthWrite: false, side: THREE.DoubleSide }));
@@ -308,7 +324,7 @@ function buildBrain(D) {
   brain.paths = sp.map((s, si) => {
     const pos = [], col = [];
     s.forEach((l, li) => {
-      pos.push(brainX(L, li), l.length ? (l[0] / D.model.mlp_n[li]) * 2 - 1 : 0, tokZ(n, si));
+      pos.push(brainX(L, li), l.length ? (l[0] / D.model.mlp_n[li]) * 2 - 1 : 0, tokZ(si));
       const k = Math.min(first[si][li], p - 1);
       const cc = new THREE.Color(c.color[3 * k], c.color[3 * k + 1], c.color[3 * k + 2]).lerp(WHITE, 0.4);
       col.push(cc.r, cc.g, cc.b);
@@ -322,12 +338,27 @@ function buildBrain(D) {
     return line;
   });
   brain.group.add(c.points);
-  // axes
-  brain.group.add(
-    at(label("L0"), -1, -1.12, 1.12), at(label(`L${L - 1}`), 1, -1.12, 1.12), at(label("layer →", { color: "#e6e8eb" }), 0, -1.26, 1.18),
-    at(label("0"), -1.12, -1, 1.06), at(label("1"), -1.12, 1, 1.06), at(label("neuron / width", { color: "#e6e8eb" }), -1.3, 0.1, 1.08),
-    at(label("token 1"), 1.2, -1.08, -1), at(label(`token ${n}`), 1.2, -1.08, 1), at(label("token →", { color: "#e6e8eb" }), 1.32, -1.2, 0));
-  brain.tokLabel = null; brain.tokLabelStep = -1;
+  // axes: layer/neuron labels ride the growing front face (z offsets relative to it)
+  brain.front = new THREE.Group();
+  brain.front.add(
+    at(label("L0"), -1, -1.12, 0.12), at(label(`L${L - 1}`), 1, -1.12, 0.12), at(label("layer →", { color: "#e6e8eb" }), 0, -1.26, 0.18),
+    at(label("0"), -1.12, -1, 0.06), at(label("1"), -1.12, 1, 0.06), at(label("neuron / width", { color: "#e6e8eb" }), -1.3, 0.1, 0.08));
+  brain.tokAxis = at(label("token →", { color: "#e6e8eb" }), 1.32, -1.2, 0);
+  brain.group.add(brain.front, brain.tokAxis, at(label("token 1"), 1.2, -1.08, -1));
+  // token ticks along z: a number on the right edge and a faint line across the floor
+  const every = n > 400 ? 100 : n > 150 ? 50 : n > 60 ? 20 : n > 25 ? 10 : 5, tl = [];
+  brain.ticks = [];
+  for (let s = every - 1; s < n; s += every) {
+    const t = at(label(`${s + 1}`, { h: 0.06 }), 1.12, -1.04, tokZ(s));
+    t.userData.step = s;
+    brain.ticks.push(t);
+    tl.push(-1, -1, tokZ(s), 1, -1, tokZ(s));
+  }
+  const tg = new THREE.BufferGeometry();
+  tg.setAttribute("position", new THREE.Float32BufferAttribute(tl, 3));
+  brain.tickLines = new THREE.LineSegments(tg, new THREE.LineBasicMaterial({ color: "#262c35" }));
+  brain.group.add(brain.tickLines, ...brain.ticks);
+  brain.tokLabel = null; brain.tokLabelStep = -1; brain.fz = null;
 }
 
 // ---------------------------------------------------------------- journey
@@ -398,8 +429,19 @@ function applyCursor() {
       c.cur[p] = s === cs.step ? 1 : 0;
     }
     c.dirty();
-    const z = tokZ(brain.n, cs.step);
+    const z = tokZ(cs.step), depth = brainDepth(cs.step), cz = -1 + depth / 2;
     brain.now.position.z = z;
+    brain.grow.scale.z = depth;
+    brain.front.position.z = -1 + depth;
+    brain.tokAxis.position.z = cz;
+    let shown = 0;
+    brain.ticks.forEach((t) => { t.visible = t.userData.step <= cs.step; shown += t.visible; });
+    brain.tickLines.geometry.setDrawRange(0, 2 * shown);
+    // follow: the camera slides along z with the current token
+    if (mode === "brain") {
+      if ($("spFollow").checked && brain.fz != null && z !== brain.fz && controls) panZ(z - brain.fz);
+      brain.fz = z;
+    }
     brain.paths.forEach((line, s) => {
       const v = vis(s);
       line.visible = style.lines && v > 0;
@@ -592,6 +634,10 @@ function loop(t) {
   requestAnimationFrame(loop);
   if (!renderer || ui.fold.sp || !view.clientHeight) return;
   controls.autoRotate = $("spSpin").checked;
+  if (camGoal) {
+    camera.position.lerp(camGoal.position, 0.18); controls.target.lerp(camGoal.target, 0.18);
+    if (camera.position.distanceTo(camGoal.position) + controls.target.distanceTo(camGoal.target) < 1e-3) camGoal = null;
+  }
   controls.update();
   for (const c of [brain.cloud, journey.cloud]) if (c) { c.points.material.uniforms.uTime.value = t / 1000; c.points.material.uniforms.uScale.value = uScale; }
   renderer.render(scene, camera);
@@ -726,7 +772,47 @@ function setMode(m, save = true) {
   scheduleJourney();
 }
 document.querySelectorAll("#space [data-mode]").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
-$("spHome").onclick = () => { camera.position.copy(HOME); controls.target.set(0, 0, 0); };
+// Camera: fit everything so far, focus the current token, zoom, follow.
+const SIDE = new THREE.Vector3(1, 0.5, 0.3).normalize();
+function fitView() {
+  if (mode !== "brain" || !cursor) return flyTo(new THREE.Vector3(), HOME);
+  // brain: frame the grown box; the longer it gets, the more we look at it side-on so tokens run across the screen
+  const depth = brainDepth(cursor.step), cz = -1 + depth / 2, r = Math.hypot(1, 1, depth / 2);
+  const dir = HOME.clone().normalize().lerp(SIDE, Math.min(1, Math.max(0, (depth - 2) / 6))).normalize();
+  const vf = (camera.fov * Math.PI) / 180, hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
+  const dist = Math.max(HOME.length(), (r / Math.sin(Math.min(vf, hf) / 2)) * 0.85);
+  const t = new THREE.Vector3(0, 0, cz);
+  flyTo(t, t.clone().addScaledVector(dir, dist));
+}
+function focusView() {
+  const D = data();
+  if (!D || !cursor) return fitView();
+  let t = new THREE.Vector3(0, 0, tokZ(cursor.step)), k = 0.75;
+  if (mode === "journey") {
+    const J = D.journey, reached = (cursor.embedDone ? 1 : 0) + cursor.layersDone;
+    if (!J || cursor.step >= J.points.length || !reached) return fitView();
+    t = new THREE.Vector3(...J.points[cursor.step][reached - 1]); k = 0.5;
+  }
+  flyTo(t, t.clone().addScaledVector(HOME, k));
+}
+function zoomView(f) {
+  const target = camGoal ? camGoal.target : controls.target, from = camGoal ? camGoal.position : camera.position;
+  const off = from.clone().sub(target), d = off.length(), nd = Math.min(300, Math.max(0.3, d * f));
+  flyTo(target, target.clone().addScaledVector(off, nd / d));
+}
+$("spHome").onclick = fitView;
+$("spFocus").onclick = focusView;
+$("spZoomIn").onclick = () => zoomView(0.7);
+$("spZoomOut").onclick = () => zoomView(1 / 0.7);
+$("spFollow").checked = ui.spFollow ?? true;
+$("spFollow").onchange = (e) => { ui.spFollow = e.target.checked; saveUi(); if (e.target.checked) focusView(); };
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || ui.fold.sp || (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) && !["range", "checkbox"].includes(e.target.type))) return;
+  if (e.key === "+" || e.key === "=") zoomView(0.7);
+  else if (e.key === "-" || e.key === "_") zoomView(1 / 0.7);
+  else if (e.key === "f" || e.key === "F") focusView();
+  else if (e.key === "0") fitView();
+});
 $("spTok").oninput = (e) => {
   const s = +e.target.value;
   if (imported) { cursor = { step: s, layersDone: imported.model.layers, embedDone: true }; applyCursor(); }
