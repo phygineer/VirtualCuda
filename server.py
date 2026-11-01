@@ -9,6 +9,7 @@ Usage:
 Endpoints:
     GET  /                       chat page (static/index.html)
     GET  /sim                    step-by-step simulation page (static/sim.html)
+    GET  /data                   dataset generation page (static/data.html)
     GET  /v1/models              OpenAI model list (loaded + cached causal LMs)
     POST /v1/chat/completions    OpenAI chat completions: streaming, tools / tool_calls.
                                  Naming another cached model switches to it, like Ollama.
@@ -24,15 +25,29 @@ Endpoints:
     GET  /media/{file}           images / audio sent in chats (stored by conversation.py)
     GET  /api/tools              built-in tool schemas (tools.py)
     POST /api/tools/run          execute a built-in tool {"name", "arguments"}
-    GET  /api/sessions           recorded conversations
+    GET  /api/sessions           recorded conversations (?q= searches titles and messages)
+    POST /api/sessions/delete    forget several conversations {"ids": [...]} or all {"all": true}
     GET  /api/sessions/{id}      one conversation's generations
+    PATCH /api/sessions/{id}     rename a conversation {"title": "..."}
     DELETE /api/sessions/{id}    forget a conversation
-    POST /api/trace              SSE trace of a fresh prompt (live sampling)
+    POST /api/trace              SSE trace of a fresh prompt, or of a whole conversation's next reply
     POST /api/replay             SSE trace replaying a recorded generation (teacher-forced)
+    GET  /api/datasets           prompt CSVs (dataset.py) with how many rows have output, + the job
+    POST /api/datasets           upload a CSV {"filename", "csv"}; it needs a "prompt" column
+    GET  /api/datasets/{name}    one dataset's rows
+    GET  /api/datasets/{name}/csv    download it
+    DELETE /api/datasets/{name}  delete it
+    POST /api/datasets/{name}/generate   fill in the model's reply to every prompt (background job)
+    GET  /api/datasets/{name}/training      how much of its training data (training.py) is built
+    POST /api/datasets/{name}/capture       build it: one teacher-forced pass per generated row (job)
+    GET  /api/datasets/{name}/training.zip  download it: data.csv + manifest.json + rows/*.safetensors
+    GET  /api/job                that job's progress
+    POST /api/job/stop           stop it after the current prompt (that prompt is redone next time)
 """
 
 import argparse
 import asyncio
+import csv
 import json
 import os
 import queue
@@ -54,8 +69,10 @@ from transformers import StoppingCriteria, StoppingCriteriaList, TextIteratorStr
 
 import compat
 import conversation as conv
+import dataset
 import store
 import tools
+import training
 from models import DEFAULT_MODEL, LoadedModel, cached_models
 from tracer import Tracer
 
@@ -156,7 +173,8 @@ class ChatRequest(BaseModel):
 
 
 class TraceRequest(BaseModel):
-    prompt: str
+    prompt: str = ""
+    messages: list[dict] | None = None  # a conversation (OpenAI messages): trace its next reply
     chat: bool = True
     max_tokens: int = 48
     temperature: float = 0.7
@@ -170,6 +188,27 @@ class ReplayRequest(BaseModel):
 
 class LoadRequest(BaseModel):
     model: str
+
+
+class Rename(BaseModel):
+    title: str
+
+
+class BulkDelete(BaseModel):
+    ids: list[str] = []
+    all: bool = False
+
+
+class DatasetUpload(BaseModel):
+    filename: str
+    csv: str
+
+
+class DatasetGenerate(BaseModel):
+    max_tokens: int = 512
+    temperature: float = 0.0  # greedy by default; replay is exact either way once ids are saved
+    top_p: float = 1.0
+    redo: bool = False  # clear every row's output first
 
 
 class ToolRun(BaseModel):
@@ -250,6 +289,48 @@ def start_generation(req: ChatRequest, session_id):
     return streamer, stop, result
 
 
+class Progress(StoppingCriteria):
+    """Reports each new token of a dataset row to the Data page, and stops on request."""
+
+    def __init__(self, start, on_step, stop_event):
+        self.start, self.on_step, self.stop_event = start, on_step, stop_event
+
+    def __call__(self, input_ids, scores, **kwargs):
+        new = input_ids[0, self.start:]
+        if len(new) % 4 == 1:  # decoding every token would cost more than it shows
+            self.on_step(len(new), conv.strip_special(lm.tok.decode(new, skip_special_tokens=False), specials()))
+        else:
+            self.on_step(len(new), None)
+        return torch.full((input_ids.shape[0],), self.stop_event.is_set(), dtype=torch.bool,
+                          device=input_ids.device)
+
+
+def generate_prompt(prompt, settings, on_step, stop_event):
+    """One dataset row: the loaded model's reply to `prompt` as a single user turn. Takes gen_lock
+    itself, per prompt, so other requests can run between rows of a job."""
+    with gen_lock:
+        ids = conv.encode(lm, [{"role": "user", "content": prompt}]).prompt_ids
+        inputs = torch.tensor([ids], device=lm.device)
+        if settings["temperature"] > 0:
+            sampling = dict(do_sample=True, temperature=settings["temperature"], top_p=settings["top_p"])
+        else:
+            sampling = dict(do_sample=False)
+        t0 = time.time()
+        with torch.no_grad():
+            out = lm.model.generate(inputs, attention_mask=torch.ones_like(inputs),
+                                    max_new_tokens=settings["max_tokens"],
+                                    stopping_criteria=StoppingCriteriaList([Progress(len(ids), on_step, stop_event)]),
+                                    **sampling)
+        completion = out[0, len(ids):].tolist()
+        text = conv.strip_special(lm.tok.decode(completion, skip_special_tokens=False), specials())
+        return {"model": lm.id, "prompt_ids": ids, "completion_ids": completion, "text": text.strip(),
+                "finish_reason": "length" if len(completion) >= settings["max_tokens"] else "stop",
+                "stopped": stop_event.is_set(), "seconds": time.time() - t0}
+
+
+job = dataset.Job()
+
+
 def usage(result):
     return {"prompt_tokens": result["prompt_tokens"],
             "completion_tokens": result["completion_tokens"],
@@ -283,6 +364,11 @@ def sim():
     return FileResponse(STATIC / "sim.html", headers=NO_CACHE)
 
 
+@app.get("/data")
+def data_page():
+    return FileResponse(STATIC / "data.html", headers=NO_CACHE)
+
+
 @app.get("/media/{name}")
 def media(name: str):
     """Images / audio that were sent in chats (content-addressed, see conversation.py)."""
@@ -313,9 +399,11 @@ async def livereload():
     if not DEV:
         return Response(status_code=204)  # pages see this once and stop listening
 
+    # Each stream ends after a few seconds and the page reconnects (livereload.js). An endless
+    # stream would keep uvicorn's graceful shutdown waiting forever, so --reload would hang.
     async def events():
         last = None
-        while True:
+        for _ in range(20):
             sig = page_files_signature()
             if sig != last:
                 last = sig
@@ -385,8 +473,13 @@ def run_tool(req: ToolRun):
 
 
 @app.get("/api/sessions")
-def sessions():
-    return store.list_sessions()
+def sessions(q: str = ""):
+    return store.list_sessions(q=q.strip())
+
+
+@app.post("/api/sessions/delete")
+def delete_sessions(req: BulkDelete):
+    return {"deleted": store.delete_sessions(None if req.all else req.ids)}
 
 
 @app.get("/api/sessions/{session_id}")
@@ -395,6 +488,16 @@ def session(session_id: str):
     if not s:
         raise HTTPException(404, "no such session")
     return s
+
+
+@app.patch("/api/sessions/{session_id}")
+def rename_session(session_id: str, req: Rename):
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(400, "title can't be empty")
+    if not store.rename_session(session_id, title):
+        raise HTTPException(404, "no such session")
+    return {"id": session_id, "title": title[:80]}
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -436,11 +539,19 @@ def stream_trace(make_events):
 async def trace(req: TraceRequest):
     await asyncio.to_thread(gen_lock.acquire)
     try:
-        ids = tracer.prompt_ids(req.prompt, req.chat)
+        if req.messages:  # same template path as /v1/chat/completions
+            enc = conv.encode(lm, conv.normalize(req.messages))
+            ids, inputs, media = enc.prompt_ids, enc.model_inputs, enc.media
+        else:
+            ids, inputs, media = tracer.prompt_ids(req.prompt, req.chat), None, None
+    except conv.BadRequest as e:
+        gen_lock.release()
+        raise HTTPException(400, str(e))
     except Exception:
         gen_lock.release()
         raise
-    return stream_trace(lambda stop: tracer.run(ids, req.max_tokens, req.temperature, req.top_p, stop))
+    return stream_trace(lambda stop: tracer.run(ids, req.max_tokens, req.temperature, req.top_p, stop,
+                                                model_inputs=inputs, media_files=media))
 
 
 @app.post("/api/replay")
@@ -483,6 +594,143 @@ async def replay(req: ReplayRequest):
     return stream_trace(lambda stop: tracer.run(g["prompt_ids"], 0, r["temperature"], r["top_p"],
                                                 stop, forced=g["completion_ids"], extra_meta=extra,
                                                 model_inputs=enc.model_inputs, media_files=enc.media))
+
+
+@app.get("/api/datasets")
+def datasets():
+    return {"datasets": dataset.list_all(), "job": job.state()}
+
+
+@app.post("/api/datasets")
+def upload_dataset(req: DatasetUpload):
+    try:
+        name = dataset.save_upload(req.filename, req.csv)
+    except (dataset.BadDataset, csv.Error) as e:
+        raise HTTPException(400, str(e))
+    return dataset.summary(name)
+
+
+def _dataset_path(name):
+    try:
+        p = dataset.path(name)
+    except dataset.BadDataset as e:
+        raise HTTPException(400, str(e))
+    if not p.exists():
+        raise HTTPException(404, f"no dataset {name}")
+    return p
+
+
+@app.get("/api/datasets/{name}")
+def get_dataset(name: str):
+    _dataset_path(name)
+    fields, rows = dataset.read(name)
+    return {**dataset.summary(name), "fields": fields, "items": rows}
+
+
+@app.get("/api/datasets/{name}/csv")
+def download_dataset(name: str):
+    return FileResponse(_dataset_path(name), media_type="text/csv", filename=f"{name}.csv",
+                        headers=NO_CACHE)
+
+
+@app.delete("/api/datasets/{name}")
+def delete_dataset(name: str):
+    _dataset_path(name)
+    if job.running() and job.st["name"] == name:
+        raise HTTPException(409, "stop the job before deleting its dataset")
+    dataset.delete(name)
+    training.delete(name)
+    return {"deleted": name}
+
+
+@app.post("/api/datasets/{name}/generate")
+def generate_dataset(name: str, req: DatasetGenerate):
+    _dataset_path(name)
+    try:
+        job.start(name, req.model_dump(), generate_prompt)
+    except dataset.BadDataset as e:
+        raise HTTPException(409, str(e))
+    return job.state()
+
+
+@app.get("/api/datasets/{name}/training")
+def training_status(name: str):
+    _dataset_path(name)
+    return training.status(name)
+
+
+def capture_one(name):
+    def work(index, row):
+        prompt_ids, output_ids = training.token_ids(row)
+        with gen_lock:
+            if row.get("model") != lm.id:
+                raise RuntimeError(f"row {row.get('id')} was generated by {row.get('model')}, "
+                                   f"but {lm.id} is loaded; switch models to capture it")
+            tensors = training.capture_row(lm, prompt_ids, output_ids)
+        return training.save_row(name, index, row, tensors, len(prompt_ids))
+    return work
+
+
+@app.post("/api/datasets/{name}/capture")
+def capture_dataset(name: str):
+    _dataset_path(name)
+    if job.running():
+        raise HTTPException(409, f"busy with {job.st['name']}")
+    fields, rows = dataset.read(name)
+    # Rows generated before prompt ids were saved: rebuild them (the chat template is deterministic).
+    missing = [r for r in rows if dataset.is_done(r) and not r.get("prompt_token_ids")]
+    if missing:
+        with gen_lock:
+            for r in missing:
+                ids = conv.encode(lm, [{"role": "user", "content": r["prompt"]}]).prompt_ids
+                if r.get("prompt_tokens") and int(r["prompt_tokens"]) != len(ids):
+                    raise HTTPException(409, f"row {r.get('id')}: prompt re-encodes to {len(ids)} tokens, "
+                                             f"not {r['prompt_tokens']}; regenerate it")
+                r["prompt_token_ids"] = json.dumps(ids)
+        fields += [f for f in dataset.OUT_FIELDS if f not in fields]
+        dataset.write(name, fields, rows)
+    todo = [(i, r) for i, r in enumerate(rows, 1) if dataset.is_done(r) and not training.is_fresh(name, i, r)]
+    total = sum(map(dataset.is_done, rows))
+    if not total:
+        raise HTTPException(409, "generate some outputs first")
+    try:
+        job.start_capture(name, todo, total, capture_one(name))
+    except dataset.BadDataset as e:
+        raise HTTPException(409, str(e))
+    return job.state()
+
+
+@app.get("/api/datasets/{name}/training.zip")
+async def download_training(name: str):
+    _dataset_path(name)
+    if job.running() and job.st["name"] == name:
+        raise HTTPException(409, "wait for the current job on this dataset to finish")
+    st = training.status(name)
+    if not st["captured"]:
+        raise HTTPException(409, "build the training data first")
+    pipe = training.download_zip(name, training.manifest(name, lm))
+
+    async def body():
+        try:
+            while (chunk := await asyncio.to_thread(pipe.q.get)) is not None:
+                yield chunk
+        finally:
+            pipe.aborted.set()  # client went away: stop the writer thread
+
+    return StreamingResponse(body(), media_type="application/zip",
+                             headers={"Content-Disposition": f'attachment; filename="{name}-training.zip"',
+                                      **NO_CACHE})
+
+
+@app.get("/api/job")
+def job_state():
+    return job.state()
+
+
+@app.post("/api/job/stop")
+def stop_job():
+    job.stop()
+    return job.state()
 
 
 @app.get("/v1/models")

@@ -8,3 +8,9 @@ data/
 .claude/settings.local.json
 .env
 *.log
+# generated datasets / training data that end up outside data/
+*.zip
+*.csv
+*.npy
+*.npz
+*.parquet

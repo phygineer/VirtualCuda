@@ -18,7 +18,7 @@ VirtualCuda explores whether those layer outputs can be **predicted** instead of
 
 ## What's here today
 
-A local, OpenAI-compatible chat server plus a **step-by-step simulator** that replays any chat turn through the real model, capturing every number from the actual forward pass. Nothing is illustrative: token ids, embeddings, each layer's residual stream, attention weights, MLP neurons, logits and the sampling decision are all real.
+A local, OpenAI-compatible chat server plus a **step-by-step simulator** (Deep dive) that runs its own prompt through the real model, capturing every number from the actual forward pass. Nothing is illustrative: token ids, embeddings, each layer's residual stream, attention weights, MLP neurons, logits and the sampling decision are all real.
 
 ### The simulator (`/sim`)
 
@@ -28,7 +28,9 @@ A local, OpenAI-compatible chat server plus a **step-by-step simulator** that re
 - **Pipeline**: each layer's residual / attention / MLP contribution, with a logit lens per layer.
 - **Inspector**: what the current stage does, with the real tensors (attention heads, neuron histograms, top candidates…).
 - **Hand-off**: one slide per token showing the hidden state flowing embedding → layers → final norm.
-- **Turns**: multi-call chats (including tool calls) replay one call at a time, teacher-forced, so you see exactly the pass that produced the reply.
+- **Own prompt**: Deep dive has its own prompt bar and shows the model's output above the panels; it is separate from the chat page.
+- **Chat list**: the chat page can rename, search, select and bulk-delete saved chats.
+- **Data** (`/data`): upload a CSV of prompts (it needs a `prompt` column; `build_prompts.py` makes a mixed 100-prompt set) and generate the model's reply to each, with live progress. Output text and exact token ids are written back to the CSV. **⤓ Training data** then runs one teacher-forced pass per row and downloads a zip: `data.csv`, `manifest.json` and one `.safetensors` per row with every position's residual stream at each layer boundary plus attention's contribution (bf16), per-layer scalars and top-10 logits (see `training.py`).
 
 ### 3D views: Brain & Journey
 

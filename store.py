@@ -78,13 +78,26 @@ def record(session_id, model, request, prompt_ids, completion_ids, content, tool
     return idx
 
 
-def list_sessions(limit=100):
+def list_sessions(limit=100, q=""):
+    """Newest first. q: only chats whose title or any message / reply contains it."""
+    where, args = "", []
+    if q:
+        like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        where = (" WHERE s.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM generations x"
+                 " WHERE x.session_id = s.id AND (x.content LIKE ? ESCAPE '\\' OR x.request LIKE ? ESCAPE '\\'))")
+        args = [like] * 3
     with connect() as conn:
         rows = conn.execute(
             "SELECT s.*, COUNT(g.id) AS generations FROM sessions s"
-            " LEFT JOIN generations g ON g.session_id = s.id"
-            " GROUP BY s.id ORDER BY s.updated DESC LIMIT ?", (limit,)).fetchall()
+            " LEFT JOIN generations g ON g.session_id = s.id" + where +
+            " GROUP BY s.id ORDER BY s.updated DESC LIMIT ?", (*args, limit)).fetchall()
     return [dict(r) for r in rows]
+
+
+def rename_session(session_id, title):
+    with connect() as conn:
+        return conn.execute("UPDATE sessions SET title = ? WHERE id = ?",
+                            (title[:80], session_id)).rowcount > 0
 
 
 def _generation(row, with_ids):
@@ -114,6 +127,17 @@ def delete_session(session_id):
     with connect() as conn:
         conn.execute("DELETE FROM generations WHERE session_id = ?", (session_id,))
         return conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,)).rowcount > 0
+
+
+def delete_sessions(ids=None):
+    """Delete these chats, or every chat when ids is None. Returns how many were deleted."""
+    with connect() as conn:
+        if ids is None:
+            conn.execute("DELETE FROM generations")
+            return conn.execute("DELETE FROM sessions").rowcount
+        marks = ",".join("?" * len(ids))
+        conn.execute(f"DELETE FROM generations WHERE session_id IN ({marks})", ids)
+        return conn.execute(f"DELETE FROM sessions WHERE id IN ({marks})", ids).rowcount
 
 
 def get_generation(session_id, idx):

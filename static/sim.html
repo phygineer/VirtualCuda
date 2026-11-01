@@ -41,15 +41,49 @@
   button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
   input:focus, select:focus { outline: none; border-color: var(--accent); }
 
-  /* ---------- header ---------- */
+  /* ---------- navbar (shared look with the chat page) ---------- */
+  .topnav {
+    display: flex; align-items: center; gap: 18px; padding: 0 16px; height: 46px;
+    border-bottom: 1px solid var(--border); background: var(--bg);
+  }
+  .brand { font: 600 15px var(--mono); color: var(--text); white-space: nowrap; letter-spacing: .02em; }
+  .brand span { color: var(--accent); }
+  .brand:hover { text-decoration: none; }
+  .tabs { display: flex; gap: 2px; align-self: stretch; }
+  .tabs a {
+    display: flex; align-items: center; padding: 0 12px; font: 13px var(--mono); color: var(--muted); white-space: nowrap;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs a:hover { color: var(--text); text-decoration: none; }
+  .tabs a.on { color: var(--text); border-bottom-color: var(--accent); }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+  /* ---------- header: the deep dive's own prompt + its output ---------- */
   header {
-    display: flex; align-items: center; gap: 10px; padding: 10px 16px; flex-wrap: wrap;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 12px; align-items: center; padding: 10px 16px;
     border-bottom: 1px solid var(--border); background: var(--panel);
   }
-  header h1 { font: 600 15px var(--mono); margin: 0; white-space: nowrap; }
-  header h1 span { color: var(--accent); }
-  header h1 small { color: var(--muted); font-weight: 400; }
-  #prompt { flex: 1; min-width: 200px; }
+  header .lbl { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); white-space: nowrap; }
+  .promptrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #prompt { flex: 1; min-width: 0; padding: 8px 12px; font-size: 14px; }
+  #output {
+    font: 13px/1.5 var(--sans); color: var(--text); white-space: pre-wrap; word-break: break-word;
+    max-height: 4.5em; overflow-y: auto; min-height: 1.5em;
+  }
+  #output.idle { color: var(--faint); font-family: var(--mono); font-size: 12px; }
+  #output .cursor { display: inline-block; width: 7px; height: 1em; background: var(--accent); vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #outStats { font: 11px var(--mono); color: var(--muted); margin-left: 8px; }
+  header [hidden] { display: none; }
+  #thread { max-height: 9em; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+  #thread div { white-space: pre-wrap; word-break: break-word; }
+  #thread b { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; margin-right: 8px; }
+  #thread .user b { color: var(--seg-user); }
+  #thread .assistant { color: var(--muted); }
+  #thread .assistant b { color: var(--accent); }
+  #follow { flex: 1; min-width: 0; }
+  #modelSel { max-width: 300px; font: 12px var(--mono); padding: 4px 8px; }
+  #modelSel:disabled { opacity: .6; }
   .opt { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
   .opt input[type=number] { width: 64px; padding: 5px 6px; }
 
@@ -154,6 +188,10 @@
   .tok.gen .p { color: var(--accent); }
   .tok.active { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn), 0 0 10px rgba(251,191,36,.35); }
   .tok.fresh { animation: pop .6s ease-out; }
+  #seq .tok { cursor: pointer; }
+  #seq .tok:hover { border-color: var(--muted); }
+  #seq .tok.out { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  #seq .tok.future { opacity: .35; }
   @keyframes pop { 0% { transform: scale(1.6); background: var(--accent-dim); } 100% { transform: scale(1); } }
   #seqText { padding: 0 14px 14px; color: var(--muted); white-space: pre-wrap; font-size: 13px; }
   #seqText b { color: var(--text); font-weight: 400; }
@@ -289,27 +327,9 @@
     padding: 4px 8px; font: 11px var(--mono); white-space: pre;
   }
 
-  /* sessions / turns */
-  #source { max-width: 340px; }
-  .live { display: flex; align-items: center; gap: 10px; flex: 1; flex-wrap: wrap; }
-  .live.hidden, .turns.hidden { display: none; }
   #modelTag { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
   #help { font: 600 13px var(--mono); padding: 4px 9px; color: var(--muted); background: transparent; }
   #help:hover { color: var(--accent); border-color: var(--accent-dim); }
-  .turns {
-    display: flex; align-items: center; gap: 6px; padding: 8px 16px; overflow-x: auto;
-    border-bottom: 1px solid var(--border); background: var(--bg);
-  }
-  .turns .lbl { font: 11px var(--mono); color: var(--muted); white-space: nowrap; margin-right: 4px; }
-  .turn {
-    font: 12px var(--mono); white-space: nowrap; padding: 4px 10px; border-radius: 999px;
-    border: 1px solid var(--border); background: var(--panel); color: var(--muted); cursor: pointer;
-  }
-  .turn:hover { border-color: var(--muted); }
-  .turn.active { border-color: var(--warn); color: var(--text); background: rgba(251,191,36,.08); }
-  .turn .tc { color: var(--seg-call); }
-  .turns .arrow { color: var(--faint); font-size: 11px; }
-  .turns label { margin-left: auto; font: 11px var(--mono); color: var(--muted); white-space: nowrap; display: flex; gap: 6px; align-items: center; }
 
   /* segments of the context window */
   :root { --seg-system: #6b7280; --seg-tools: #d97706; --seg-user: #60a5fa; --seg-assistant: #5eead4; --seg-call: #a78bfa; --seg-result: #e879f9;
@@ -417,23 +437,40 @@
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <a class="brand" href="/">Virtual<span>Cuda</span></a>
+  <div class="tabs">
+    <a href="/">Chat</a>
+    <a href="/sim" class="on">Deep dive</a>
+    <a href="/data" title="Generate the model's replies for a CSV of prompts">Data</a>
+  </div>
+  <div class="nav-right">
+    <select id="modelSel" title="Model to run (the chat page uses the same loaded model)"></select>
+    <span id="modelTag"></span>
+    <button id="help" title="Supported models: what the simulator can show, and for which models">?</button>
+  </div>
+</nav>
+
 <header>
-  <h1><a href="/" style="color:inherit">Virtual<span>Cuda</span></a> <small>/ simulation</small></h1>
-  <a href="/" id="chatLink" title="Back to the chat">← chat</a>
-  <select id="source" title="Replay a recorded conversation, or try a fresh prompt">
-    <option value="">✎ New prompt (live sampling)</option>
-  </select>
-  <span class="live" id="liveCtl">
-    <input type="text" id="prompt" value="What is the capital of France?" placeholder="Prompt to simulate">
+  <span class="lbl">Prompt</span>
+  <div class="promptrow">
+    <input type="text" id="prompt" value="What is the capital of France?" placeholder="Prompt to run through the model (Enter to run)">
     <details class="opts"><summary title="Sampling options">⚙</summary><div class="opts-pop">
       <label class="opt"><input type="checkbox" id="chatTmpl" checked> chat template</label>
       <label class="opt">temperature <input type="number" id="temp" value="0.7" min="0" max="2" step="0.1"></label>
       <label class="opt">max tokens <input type="number" id="maxTok" value="32" min="1" max="256" step="1"></label>
     </div></details>
     <button class="primary" id="run">Run</button>
-  </span>
-  <span id="modelTag"></span>
-  <button id="help" title="Supported models: what the simulator can show, and for which models">?</button>
+  </div>
+  <span class="lbl" id="threadLbl" hidden>Earlier</span>
+  <div id="thread" hidden></div>
+  <span class="lbl" id="outLbl">Output</span>
+  <div id="output" class="idle">Press Run: the model answers here, and every layer of every token shows below.</div>
+  <span class="lbl" id="followLbl" hidden>Follow-up</span>
+  <div class="promptrow" id="followRow" hidden>
+    <input type="text" id="follow" placeholder="Ask a follow-up: the whole conversation is run through the model again (Enter)">
+    <button id="followBtn">Send</button>
+  </div>
 </header>
 
 <div class="transport">
@@ -451,7 +488,6 @@
   <button id="hoOpen" title="Show the hand-off pass" hidden>⇢ hand-off</button>
 </div>
 
-<div class="turns hidden" id="turns"></div>
 
 <main>
   <section class="col" id="colSeq">
@@ -558,8 +594,6 @@ let playing = false;
 let lastShownGi = -1;
 let STAGES0 = [];         // stages of step 0 (includes one stage per image / audio clip)
 let STAGESN = [];         // stages of every later step (encoders already ran; their output is cached)
-let session = null;       // recorded conversation being replayed (from /api/sessions/{id})
-let currentGen = null;    // which of its generations is loaded
 let segs = [];            // per prompt token: which part of the context it belongs to
 const decoded = new Map(); // lazy float16 decode cache
 const summaries = new Map();
@@ -677,9 +711,11 @@ function tokenAtPos(pos) {
   return pos < P ? meta.tokens[pos] : steps[pos - P].chosen;
 }
 
-function tokChip(t, cls = "", seg = null) {
+// step: for a generated token, the pass that sampled it (makes the chip clickable in Sequence)
+function tokChip(t, cls = "", seg = null, step = null) {
   const segAttr = seg ? ` data-seg="${seg}" style="--segc:var(--seg-${SEG_VAR[seg]})"` : "";
-  return `<span class="tok ${isSpecial(t) ? "special" : ""} ${cls}"${segAttr}><span class="p">${vis(t.text) || "&nbsp;"}</span><span class="i">${t.id}</span></span>`;
+  const stepAttr = step != null ? ` data-step="${step}" title="token ${step + 1}: jump to the pass that produced it"` : "";
+  return `<span class="tok ${isSpecial(t) ? "special" : ""} ${cls}"${segAttr}${stepAttr}><span class="p">${vis(t.text) || "&nbsp;"}</span><span class="i">${t.id}</span></span>`;
 }
 
 // ---------------------------------------------------------------- context segments
@@ -1369,8 +1405,7 @@ function renderInspector(c) {
     const last = c.step === steps.length - 1 && streamDone;
     if (last && meta.replay?.finish_reason === "tool_calls") {
       const calls = meta.replay.tool_calls.map((t) => `${t.function.name}(${t.function.arguments})`).join(", ");
-      const hasNext = meta.replay.generation + 1 < meta.replay.generations;
-      box.appendChild(h("div", `<b>Turn ends with a tool call:</b> <code>${esc(calls)}</code>. The client runs the tool and sends its result back as a new message${hasNext ? `, which starts the next turn. <a href="#" onclick="loadGeneration(${meta.replay.generation + 1});return false">Go to turn ${meta.replay.generation + 2} →</a>` : "."}`, "card"));
+      box.appendChild(h("div", `<b>Turn ends with a tool call:</b> <code>${esc(calls)}</code>. The client runs the tool and sends its result back as a new message.`, "card"));
     } else if (/^<\|(im_end|endoftext|eot_id)\|>$|^<end_of_turn>$|^<turn\|>$|^<eos>$/.test(s.chosen.text)) {
       box.appendChild(h("div", `<b>End-of-turn token.</b> Generation stops here.`, "card"));
     }
@@ -1674,11 +1709,28 @@ function renderSeq(c) {
   const chips = [chipsFor(meta.tokens, 0, (i) => (c.step === 0 ? "active " : "") + (i < reused ? "carried" : ""))];
   for (let j = 0; j < nGen; j++) {
     const isInput = j === c.step - 1, isFresh = sampled && j === c.step;
-    chips.push(tokChip(steps[j].chosen, `gen ${isInput ? "active" : ""} ${isFresh && lastShownGi !== gi ? "fresh" : ""}`));
+    chips.push(tokChip(steps[j].chosen, `gen ${isInput ? "active" : ""} ${isFresh ? "out" : ""} ${isFresh && lastShownGi !== gi ? "fresh" : ""}`, null, j));
   }
+  // While paused, the tokens still to come are shown faded so you can click ahead to them.
+  if (!playing) for (let j = nGen; j < steps.length; j++) chips.push(tokChip(steps[j].chosen, "gen future", null, j));
   $("seq").innerHTML = chips.join("");
-  const gen = steps.slice(0, nGen).map((s) => s.chosen.text).filter((t) => !/^<\|.*\|>$|^<\|?\w+\|?>$|^<\/?\w+\|>$/.test(t)).join("");
-  $("seqText").innerHTML = `<b>${esc(gen)}</b>`;
+  $("seqText").innerHTML = `<b>${esc(genText(steps.slice(0, nGen)))}</b>`;
+}
+
+// The sampled tokens as text, without chat-template control tokens.
+const genText = (ss) => ss.map((s) => s.chosen.text).filter((t) => !/^<\|.*\|>$|^<\|?\w+\|?>$|^<\/?\w+\|>$/.test(t)).join("");
+
+// Header output: the whole answer as it streams in, independent of where playback is.
+function renderOutput(t0) {
+  const out = $("output");
+  out.classList.remove("idle");
+  out.textContent = genText(steps);
+  if (!streamDone) out.insertAdjacentHTML("beforeend", `<span class="cursor"></span>`);
+  else if (steps.length) {
+    const secs = (performance.now() - t0) / 1000;
+    out.insertAdjacentHTML("beforeend", `<span id="outStats">${steps.length} token${steps.length > 1 ? "s" : ""} · ${secs.toFixed(1)} s</span>`);
+  }
+  out.scrollTop = out.scrollHeight;
 }
 
 // ---------------------------------------------------------------- transport
@@ -1720,10 +1772,6 @@ function tick(t) {
     if (gi + 1 < total()) { gi++; moved = true; }
     else {
       acc = 0;
-      if (streamDone && $("autoTurn")?.checked && session && currentGen + 1 < session.generations.length) {
-        loadGeneration(currentGen + 1, true);
-        return;
-      }
       if (streamDone) { pause(); break; }
       $("buffer").textContent = "waiting for model…";
       break;
@@ -1735,7 +1783,7 @@ function tick(t) {
 
 function play() {
   if (!steps.length) {
-    if (pending && !controller) startTrace(pending.url, pending.payload);  // the click that starts everything
+    if (!controller) run();  // ▶ Play with nothing loaded runs the prompt
     return;
   }
   if (gi >= total() - 1 && streamDone) gi = 0;
@@ -1746,9 +1794,19 @@ function play() {
   requestAnimationFrame(tick);
 }
 function pause() {
+  const was = playing;
   playing = false;
   playLabel();
+  if (was && steps.length) renderSeq(cur());  // show the faded tokens still to come
 }
+
+// Click a token in Sequence: go to the end of the pass that produced it, so the pipeline, 3D view
+// and inspector all show that moment. Prompt tokens all go through together in the first pass.
+$("seq").onclick = (e) => {
+  const chip = e.target.closest(".tok");
+  if (!chip || !steps.length) return;
+  showStepEnd(chip.dataset.step != null ? Math.min(+chip.dataset.step, steps.length - 1) : 0);
+};
 // At the very end, Play means "start over"; say so instead of restarting silently.
 function playLabel() {
   if (playing) return;
@@ -1783,48 +1841,114 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------------------------------------------------------------- run / replay
+// Run starts a new conversation from the Prompt box; Follow-up continues it. Each follow-up is
+// traced as one fresh pass over the whole conversation (no cache between turns), like the chat.
+let convo = [];  // messages so far, ending with the user message being answered
+
 function run() {
   if (controller) { controller.abort(); return; }
   const prompt = $("prompt").value.trim();
   if (!prompt) return;
+  convo = [{ role: "user", content: prompt }];
+  renderThread();
   startTrace("/api/trace", { prompt, chat: $("chatTmpl").checked, temperature: +$("temp").value, max_tokens: +$("maxTok").value });
 }
 
-// Nothing runs on its own: opening a chat or a turn only arms it, and ▶ Play starts the replay.
-let pending = null;  // {url, payload} waiting for a click
+function followUp() {
+  const text = $("follow").value.trim();
+  if (!text || controller || !convo.length) return;
+  convo.push({ role: "assistant", content: genText(steps).trim() }, { role: "user", content: text });
+  $("follow").value = "";
+  renderThread();
+  startTrace("/api/trace", { messages: convo, temperature: +$("temp").value, max_tokens: +$("maxTok").value });
+}
+
+// Earlier turns (everything after the first prompt, which stays in the Prompt box).
+function renderThread() {
+  const earlier = convo.slice(1);
+  $("thread").innerHTML = earlier.map((m) => `<div class="${m.role}"><b>${m.role === "user" ? "you" : "model"}</b>${esc(m.content)}</div>`).join("");
+  $("thread").hidden = $("threadLbl").hidden = !earlier.length;
+  $("thread").scrollTop = $("thread").scrollHeight;
+  const turn = convo.filter((m) => m.role === "user").length;
+  $("outLbl").textContent = turn > 1 ? `Reply ${turn}` : "Output";
+}
+
+// Follow-ups need the chat template (a raw-text prompt has no turns to continue).
+function syncFollow() {
+  const show = !controller && streamDone && steps.length > 0 && convo.length > 0 && $("chatTmpl").checked;
+  $("followRow").hidden = $("followLbl").hidden = !show;
+}
+$("followBtn").onclick = followUp;
+$("follow").addEventListener("keydown", (e) => { if (e.key === "Enter") followUp(); });
+$("chatTmpl").addEventListener("change", syncFollow);
+
+// ---------------------------------------------------------------- model
+async function loadModels() {
+  try {
+    const [models, info] = await Promise.all([fetch("/api/models").then((r) => r.json()), fetch("/api/info").then((r) => r.json())]);
+    $("modelSel").innerHTML = models.cached.map((m) =>
+      `<option value="${esc(m.id)}" ${m.supported ? "" : "disabled"} title="${esc(m.reason ?? "")}">${esc(m.id)} (${m.size_gb} GB)${m.supported ? "" : " · not supported"}</option>`).join("");
+    $("modelSel").value = models.loaded;
+    $("modelTag").textContent = `${info.layers} layers`;
+  } catch {
+    $("modelTag").textContent = "server unreachable";
+  }
+}
+
+$("modelSel").onchange = async (e) => {
+  const id = e.target.value;
+  resetTrace();
+  convo = []; renderThread(); syncFollow();
+  $("modelSel").disabled = $("run").disabled = true;
+  $("modelTag").textContent = "loading…";
+  $("where").textContent = "idle";
+  $("insp").innerHTML = `<div class="empty">Loading <b>${esc(id)}</b>…</div>`;
+  try {
+    const res = await fetch("/api/models/load", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: id }) });
+    if (!res.ok) {
+      const { detail } = await res.json();
+      detail?.checks ? VCDocs.showReport(detail) : alert(detail);
+    }
+    $("insp").innerHTML = `<div class="empty">${res.ok ? `<b>${esc(id)}</b> is loaded.` : "Model not loaded."} Type a prompt and press <b>Run</b>.</div>`;
+  } finally {
+    $("modelSel").disabled = $("run").disabled = false;
+    await loadModels();
+  }
+};
+
+// The chat page may have switched the model while this tab was in the background.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !controller && !$("modelSel").disabled) loadModels();
+});
 
 function resetTrace() {
   if (controller) controller.abort();
   controller = null;
   pause();
+  hoInProgress = false; hoPause();  // before meta goes: redrawing the hand-off slides reads it
   meta = null; steps = []; gi = 0; lastShownGi = -1; segs = [];
   decoded.clear(); summaries.clear(); mediaCache.clear();
-  handoffReady = false; handoffStep = -1; hoDismissed = false; hoInProgress = false; hoPause();
+  handoffReady = false; handoffStep = -1; hoDismissed = false;
   hoOpened = null; $("hoSlides").hidden = false; $("hoTiles").hidden = true; $("hoBack").hidden = true;
   $("handoff").classList.add("hidden");
   window.Space?.reset();
   streamDone = false;
   $("tower").innerHTML = ""; $("seq").innerHTML = ""; $("seqText").innerHTML = "";
+  $("output").className = "idle"; $("output").textContent = "Press Run: the model answers here, and every layer of every token shows below.";
   $("scrubber").value = 0; $("scrubber").max = 0; $("scrubber").disabled = true; $("buffer").textContent = "";
   $("run").textContent = "Run"; $("run").className = "primary";
 }
 
-function arm(url, payload, label) {
-  resetTrace();
-  pending = { url, payload };
-  $("where").textContent = "ready";
-  $("insp").innerHTML = `<div class="empty">${label}<br><br>Press <b>▶ Play</b> (or Space) to start. The server loads the model if needed and recomputes every layer for real.</div>`;
-  playLabel();
-}
-
 async function startTrace(url, payload) {
   resetTrace();
-  pending = null;
   const ctl = (controller = new AbortController());
+  syncFollow();
   $("run").textContent = "Stop";
   $("run").className = "danger";
   $("insp").innerHTML = `<div class="empty">Running the model…</div>`;
   $("where").textContent = "tokenizing…";
+  const t0 = performance.now();
+  $("output").className = ""; $("output").innerHTML = `<span class="cursor"></span>`;
 
   try {
     const res = await fetch(url, {
@@ -1858,9 +1982,11 @@ async function startTrace(url, payload) {
           STAGES0 = buildStages(true);
           STAGESN = buildStages(false);
           buildTower();
-          $("modelTag").textContent = `${meta.model} · ${meta.layers} layers`;
+          $("modelTag").textContent = `${meta.layers} layers`;
+          if ($("modelSel").value !== meta.model) loadModels();
         } else if (ev.type === "step") {
           steps.push(ev);
+          renderOutput(t0);
           if (steps.length === 1) { render(); play(); }
           else updateTransport();
         } else if (ev.type === "error") {
@@ -1876,81 +2002,15 @@ async function startTrace(url, payload) {
       controller = null;
       $("run").textContent = "Run";
       $("run").className = "primary";
-      if (steps.length) render();
+      if (steps.length) { render(); renderOutput(t0); }
+      else if (!$("output").textContent) { $("output").className = "idle"; $("output").textContent = "No output."; }
+      syncFollow();
     }
   }
 }
 
 $("run").onclick = run;
 $("help").onclick = () => VCDocs.open("model");
-
-// ---------------------------------------------------------------- sessions
-async function loadSessionList(selected) {
-  const list = await (await fetch("/api/sessions")).json();
-  const when = (t) => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  $("source").innerHTML = `<option value="">✎ New prompt (live sampling)</option>` +
-    list.map((s) => `<option value="${s.id}">${esc(s.title.slice(0, 48))} · ${s.generations} call${s.generations > 1 ? "s" : ""} · ${when(s.updated)}</option>`).join("");
-  $("source").value = selected ?? "";
-}
-
-async function openSession(id, gen = 0) {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
-  if (!res.ok) { $("insp").innerHTML = `<div class="empty">Session not found.</div>`; return; }
-  session = await res.json();
-  $("source").value = session.id;
-  $("chatLink").href = `/?session=${encodeURIComponent(session.id)}`;
-  $("chatLink").textContent = "← back to this chat";
-  $("liveCtl").classList.add("hidden");
-  $("turns").classList.remove("hidden");
-  renderTurns();
-  loadGeneration(Math.min(gen, session.generations.length - 1));
-}
-
-function turnLabel(g) {
-  const last = g.request.messages[g.request.messages.length - 1];
-  const from = last?.role === "tool" ? "tool result" : last?.role ?? "?";
-  const out = g.tool_calls ? `<span class="tc">🔧 ${g.tool_calls.map((t) => t.function.name).join(", ")}</span>`
-    : esc((g.content || "").slice(0, 28).replace(/\n/g, " ")) + ((g.content || "").length > 28 ? "…" : "");
-  return `#${g.idx + 1} ${from} → ${out}`;
-}
-
-function renderTurns() {
-  $("turns").innerHTML = `<span class="lbl">turns</span>` +
-    session.generations.map((g, i) => `${i ? '<span class="arrow">→</span>' : ""}<span class="turn ${i === currentGen ? "active" : ""}" data-i="${i}" title="${g.prompt_tokens} prompt tokens → ${g.completion_tokens} generated · ${g.finish_reason}">${turnLabel(g)}</span>`).join("") +
-    `<label><input type="checkbox" id="autoTurn"> auto-advance turns</label>`;
-  $("turns").querySelectorAll(".turn").forEach((t) => (t.onclick = () => loadGeneration(+t.dataset.i)));
-}
-
-function loadGeneration(i, start = false) {
-  currentGen = i;
-  const keepAuto = $("autoTurn")?.checked ?? false;
-  renderTurns();
-  $("autoTurn").checked = keepAuto;
-  $("turns").querySelector(".turn.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  history.replaceState(null, "", `/sim?session=${encodeURIComponent(session.id)}&gen=${i}`);
-  const payload = { session: session.id, generation: i };
-  if (start) startTrace("/api/replay", payload);
-  else arm("/api/replay", payload, `Turn ${i + 1} of ${session.generations.length} is ready to replay${session.model ? ` with <b>${esc(session.model)}</b>` : ""}.`);
-}
-
-function useLive() {
-  session = null; currentGen = null;
-  resetTrace(); pending = null;
-  $("where").textContent = "idle";
-  $("insp").innerHTML = `<div class="empty">Type a prompt and press <b>Run</b>.</div>`;
-  $("chatLink").href = "/";
-  $("chatLink").textContent = "← chat";
-  $("liveCtl").classList.remove("hidden");
-  $("turns").classList.add("hidden");
-  history.replaceState(null, "", "/sim");
-}
-
-$("source").onchange = (e) => (e.target.value ? openSession(e.target.value) : useLive());
-
-// Chats made in the other tab show up here when you come back.
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") loadSessionList(session?.id ?? "");
-});
 
 // ---------------------------------------------------------------- layout: resize, fold, maximize, zoom
 // Remembered per browser: column widths, hand-off height, folded panels and folded cards.
@@ -2136,10 +2196,9 @@ document.addEventListener("keydown", (e) => {
 applyLayout();
 
 const params = new URLSearchParams(location.search);
-loadSessionList(params.get("session")).then(() => {
-  if (params.get("session")) openSession(params.get("session"), +(params.get("gen") ?? 0));
-  else if (params.get("q")) $("prompt").value = params.get("q");
-});
+if (params.get("q")) $("prompt").value = params.get("q");
+$("prompt").focus();
+loadModels();
 </script>
 <script type="module" src="/static/space.js"></script>
 </body>

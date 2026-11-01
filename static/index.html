@@ -25,27 +25,39 @@
   html, body { height: 100%; margin: 0; }
   body {
     background: var(--bg); color: var(--text); font: 14px/1.55 var(--sans);
-    display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+    display: grid; grid-template-rows: auto auto 1fr; overflow: hidden;
   }
   a { color: var(--accent); }
 
+  /* ---------- navbar (shared look with the sim page) ---------- */
+  .topnav {
+    display: flex; align-items: center; gap: 18px; padding: 0 16px; height: 46px;
+    border-bottom: 1px solid var(--border); background: var(--bg);
+  }
+  .brand { font: 600 15px var(--mono); color: var(--text); text-decoration: none; letter-spacing: .02em; white-space: nowrap; }
+  .brand span { color: var(--accent); }
+  .tabs { display: flex; gap: 2px; align-self: stretch; }
+  .tabs a {
+    display: flex; align-items: center; padding: 0 12px; font: 13px var(--mono); color: var(--muted); white-space: nowrap;
+    text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs a:hover { color: var(--text); }
+  .tabs a.on { color: var(--text); border-bottom-color: var(--accent); }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+  /* ---------- page header ---------- */
   header {
-    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    display: flex; align-items: center; gap: 12px; padding: 8px 16px; min-width: 0;
     border-bottom: 1px solid var(--border); background: var(--panel);
   }
-  header h1 { font: 600 15px var(--mono); margin: 0; letter-spacing: .02em; }
-  header h1 span { color: var(--accent); }
+  header h1 { font: 600 14px var(--sans); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  header .sub { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
   .chip {
     font: 12px var(--mono); color: var(--muted); border: 1px solid var(--border);
     padding: 2px 8px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .deep {
-    margin-left: auto; font: 12px var(--mono); color: var(--accent); text-decoration: none;
-    border: 1px solid var(--accent-dim); padding: 3px 10px; border-radius: 999px; white-space: nowrap;
-  }
-  .deep:hover { background: var(--accent-dim); }
-  .deep.off { color: var(--faint); border-color: var(--border); pointer-events: none; }
-  .status { margin-left: 12px; display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .status { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .dot.ok { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
   .dot.busy { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
@@ -58,28 +70,37 @@
     border-right: 1px solid var(--border); background: var(--panel);
     display: flex; flex-direction: column; min-height: 0;
   }
-  .side-top { padding: 12px; border-bottom: 1px solid var(--border); }
+  .side-top { padding: 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
   .side-top button { width: 100%; }
+  #search { padding: 7px 10px; }
+  .bulk { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--muted); }
+  .bulk label { display: flex; align-items: center; gap: 6px; margin: 0 auto 0 0; white-space: nowrap; cursor: pointer; color: var(--muted); }
+  .bulk input { margin: 0; }
+  .bulk button { padding: 3px 8px; font: 11px var(--mono); }
+  .bulk button:disabled { opacity: .4; cursor: default; }
+  .bulk button.danger:not(:disabled):hover { color: var(--danger); border-color: var(--danger); }
   .drawer h2 { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
   #chats { flex: 1; overflow-y: auto; padding: 8px; min-height: 80px; }
   #chats .none { color: var(--faint); font: 12px var(--mono); padding: 8px; }
   .item {
-    position: relative; padding: 8px 64px 8px 10px; border-radius: 6px; cursor: pointer;
+    position: relative; padding: 8px 64px 8px 32px; border-radius: 6px; cursor: pointer;
     border-left: 2px solid transparent; margin-bottom: 2px;
   }
+  .item .sel { position: absolute; left: 10px; top: 12px; margin: 0; cursor: pointer; }
+  .item.checked { background: rgba(94,234,212,.06); }
+  .item .rename { width: 100%; padding: 2px 6px; font: 13px var(--sans); }
   .item:hover { background: var(--panel-2); }
   .item.active { background: var(--panel-2); border-left-color: var(--accent); }
   .item .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
   .item .m { font: 11px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .acts { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; opacity: 0; }
   .item:hover .acts, .item.active .acts { opacity: 1; }
-  .item .acts a, .item .acts button {
+  .item .acts button {
     font: 12px var(--mono); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);
-    background: var(--panel); color: var(--muted); text-decoration: none; cursor: pointer; line-height: 1.4;
+    background: var(--panel); color: var(--muted); cursor: pointer; line-height: 1.4;
   }
-  .item .acts a { color: var(--accent); border-color: var(--accent-dim); }
-  .item .acts a:hover { background: var(--accent-dim); }
-  .item .acts button:hover { color: var(--danger); border-color: var(--danger); }
+  .item .acts button:hover { color: var(--text); border-color: var(--muted); }
+  .item .acts button[data-del]:hover { color: var(--danger); border-color: var(--danger); }
 
   /* ---------- settings drawer (gear) ---------- */
   .gear {
@@ -195,23 +216,44 @@
   @media (max-width: 720px) {
     main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     aside { border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
-    .model-chip { display: none; }
+    .model-chip, header .sub { display: none; }
   }
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <a class="brand" href="/">Virtual<span>Cuda</span></a>
+  <div class="tabs">
+    <a href="/" class="on">Chat</a>
+    <a href="/sim" title="Run a prompt through the model and watch every layer">Deep dive</a>
+    <a href="/data" title="Generate the model's replies for a CSV of prompts">Data</a>
+  </div>
+  <div class="nav-right">
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">connecting</span></div>
+    <button class="gear" id="help" type="button" title="Supported models">?</button>
+  </div>
+</nav>
+
 <header>
-  <h1>Virtual<span>Cuda</span></h1>
-  <span class="chip model-chip" id="modelChip" title="Chat settings">loading…</span>
-  <a class="deep off" id="simLink" href="/sim" title="Bird's-eye replay of this chat, layer by layer">Deep dive this chat →</a>
-  <div class="status"><span class="dot" id="dot"></span><span id="statusText">connecting</span></div>
-  <button class="gear" id="help" type="button" title="Supported models">?</button>
-  <button class="gear" id="gear" type="button" title="Chat settings: model, tools, temperature…">⚙</button>
+  <h1 id="chatTitle">New chat</h1>
+  <span class="sub" id="chatMeta"></span>
+  <div class="head-right">
+    <span class="chip model-chip" id="modelChip" title="Chat settings">loading…</span>
+    <button class="gear" id="gear" type="button" title="Chat settings: model, tools, temperature…">⚙</button>
+  </div>
 </header>
 
 <main>
   <aside>
-    <div class="side-top"><button id="newChat" type="button">+ New chat</button></div>
+    <div class="side-top">
+      <button id="newChat" type="button">+ New chat</button>
+      <input type="text" id="search" placeholder="Search chats…" autocomplete="off">
+      <div class="bulk">
+        <label title="Select every chat in the list"><input type="checkbox" id="selAll"> <span id="selCount">select all</span></label>
+        <button type="button" class="danger" id="delSel" disabled title="Delete the selected chats">Delete</button>
+        <button type="button" class="danger" id="clearAll" title="Delete every chat">Clear all</button>
+      </div>
+    </div>
     <div id="chats"></div>
   </aside>
 
@@ -272,8 +314,8 @@
 const $ = (id) => document.getElementById(id);
 const log = $("log"), input = $("input"), sendBtn = $("send");
 const MAX_TOOL_ROUNDS = 5;
-const EMPTY = `<div class="empty" id="empty">Talk to the model. Every chat is saved on the left;<br>
-  open <b>Deep dive</b> on any of them to replay it layer by layer.<br><br>
+const EMPTY = `<div class="empty" id="empty">Talk to the model. Every chat is saved on the left.<br>
+  To watch a prompt go through every layer, open <b>Deep dive</b> in the navbar.<br><br>
   <b>POST /v1/chat/completions</b> (OpenAI-compatible, with tools)</div>`;
 let history = [];
 let modelId = null;
@@ -388,44 +430,125 @@ function enabledTools() {
 }
 
 // ---------------------------------------------------------------- chat list
+// Create (+ New chat / first message), read (open), rename (✎ or double-click), delete (one,
+// selected, or all), and search titles + message text on the server.
 const when = (t) => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+let chatList = [];            // what the list currently shows (search applied)
+const selected = new Set();   // ids ticked for bulk delete
+let searchTimer = null;
 
 async function refreshChats() {
-  const list = await (await fetch("/api/sessions")).json();
-  sessionSaved = list.some((s) => s.id === sessionId);
-  $("chats").innerHTML = list.length ? list.map((s) => `
-    <div class="item ${s.id === sessionId ? "active" : ""}" data-id="${esc(s.id)}">
+  const q = $("search").value.trim();
+  chatList = await (await fetch(`/api/sessions${q ? "?q=" + encodeURIComponent(q) : ""}`)).json();
+  sessionSaved = chatList.some((s) => s.id === sessionId) || (!!q && sessionSaved);  // a search may hide it
+  for (const id of [...selected]) if (!chatList.some((s) => s.id === id)) selected.delete(id);
+  $("chats").innerHTML = chatList.length ? chatList.map((s) => `
+    <div class="item ${s.id === sessionId ? "active" : ""} ${selected.has(s.id) ? "checked" : ""}" data-id="${esc(s.id)}">
+      <input type="checkbox" class="sel" ${selected.has(s.id) ? "checked" : ""} title="Select">
       <div class="t">${esc(s.title)}</div>
       <div class="m">${s.generations} call${s.generations > 1 ? "s" : ""} · ${when(s.updated)} · ${esc(s.model.split("/").pop())}</div>
       <div class="acts">
-        <a href="/sim?session=${encodeURIComponent(s.id)}" title="Deep dive: replay this chat layer by layer">⤢ dive</a>
+        <button type="button" data-ren title="Rename">✎</button>
         <button type="button" data-del title="Delete this chat">×</button>
       </div>
-    </div>`).join("") : `<div class="none">No chats yet.</div>`;
+    </div>`).join("") : `<div class="none">${q ? "No chats match." : "No chats yet."}</div>`;
   $("chats").querySelectorAll(".item").forEach((el) => {
+    const id = el.dataset.id;
     el.onclick = (e) => {
-      if (e.target.closest("a")) return;
-      if (e.target.closest("[data-del]")) { deleteChat(el.dataset.id); return; }
-      openChat(el.dataset.id);
+      if (e.target.closest(".rename")) return;
+      if (e.target.classList.contains("sel")) { toggleSelect(id, e.target.checked); return; }
+      if (e.target.closest("[data-del]")) { deleteChats([id]); return; }
+      if (e.target.closest("[data-ren]")) { startRename(el); return; }
+      openChat(id);
     };
+    el.querySelector(".t").ondblclick = (e) => { e.stopPropagation(); startRename(el); };
   });
-  syncLinks();
+  syncBulk();
+  syncHeader();
 }
 
-function syncLinks() {
-  const link = $("simLink");
-  link.href = `/sim?session=${encodeURIComponent(sessionId)}`;
-  link.classList.toggle("off", !sessionSaved);
+function toggleSelect(id, on) {
+  on ? selected.add(id) : selected.delete(id);
+  $("chats").querySelector(`.item[data-id="${CSS.escape(id)}"]`)?.classList.toggle("checked", on);
+  syncBulk();
+}
+
+function syncBulk() {
+  const n = selected.size;
+  $("selAll").checked = n > 0 && n === chatList.length;
+  $("selAll").indeterminate = n > 0 && n < chatList.length;
+  $("selAll").disabled = !chatList.length;
+  $("selCount").textContent = n ? `${n} selected` : "select all";
+  $("delSel").disabled = !n;
+  $("delSel").textContent = n ? `Delete ${n}` : "Delete";
+  $("clearAll").disabled = !chatList.length && !$("search").value.trim();
+}
+
+$("selAll").onchange = (e) => {
+  selected.clear();
+  if (e.target.checked) chatList.forEach((s) => selected.add(s.id));
+  $("chats").querySelectorAll(".item").forEach((el) => {
+    el.classList.toggle("checked", selected.has(el.dataset.id));
+    el.querySelector(".sel").checked = selected.has(el.dataset.id);
+  });
+  syncBulk();
+};
+$("delSel").onclick = () => deleteChats([...selected]);
+$("clearAll").onclick = () => deleteChats(null);
+$("search").oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(refreshChats, 200); };
+$("search").onkeydown = (e) => { if (e.key === "Escape" && $("search").value) { e.stopPropagation(); $("search").value = ""; refreshChats(); } };
+
+function startRename(el) {
+  const t = el.querySelector(".t");
+  if (t.querySelector("input")) return;
+  const old = chatList.find((s) => s.id === el.dataset.id)?.title ?? t.textContent;
+  t.innerHTML = `<input type="text" class="rename" maxlength="80">`;
+  const box = t.querySelector("input");
+  box.value = old;
+  box.focus();
+  box.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const title = box.value.trim();
+    if (save && title && title !== old) {
+      await fetch(`/api/sessions/${encodeURIComponent(el.dataset.id)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
+      });
+    }
+    refreshChats();
+  };
+  box.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.stopPropagation(); finish(false); }
+  };
+  box.onblur = () => finish(true);
+}
+
+// ids: the chats to delete, or null for every chat (the search box doesn't limit "Clear all")
+async function deleteChats(ids) {
+  const msg = ids === null ? "Delete ALL chats and their recordings? This can't be undone."
+    : ids.length === 1 ? "Delete this chat and its recording?" : `Delete ${ids.length} chats and their recordings?`;
+  if (!confirm(msg)) return;
+  await fetch("/api/sessions/delete", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(ids === null ? { all: true } : { ids }),
+  });
+  ids === null ? selected.clear() : ids.forEach((id) => selected.delete(id));
+  if (ids === null || ids.includes(sessionId)) newChat();
+  else refreshChats();
+}
+
+function syncHeader() {
+  const s = chatList.find((c) => c.id === sessionId);
+  const first = history.find((m) => m.role === "user");
+  const draft = typeof first?.content === "string" ? first.content : first ? "untitled" : "";
+  $("chatTitle").textContent = s?.title ?? (draft ? draft.slice(0, 80) : "New chat");
+  $("chatMeta").textContent = s ? `${s.generations} call${s.generations > 1 ? "s" : ""} · ${when(s.updated)}` : "";
   history.length && sessionSaved
     ? window.history.replaceState(null, "", `/?session=${encodeURIComponent(sessionId)}`)
     : window.history.replaceState(null, "", "/");
-}
-
-async function deleteChat(id) {
-  if (!confirm("Delete this chat and its recording?")) return;
-  await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
-  if (id === sessionId) newChat();
-  else refreshChats();
 }
 
 // ---------------------------------------------------------------- rendering
@@ -554,17 +677,10 @@ function addToolCall(el, call) {
   return div.querySelector(".res");
 }
 
-function addStats(el, parts, gen) {
+function addStats(el, parts) {
   const stats = document.createElement("div");
   stats.className = "stats";
   stats.textContent = parts.filter(Boolean).join(" · ");
-  if (gen != null) {
-    const a = document.createElement("a");
-    a.href = `/sim?session=${encodeURIComponent(sessionId)}&gen=${gen}`;
-    a.textContent = "▶ replay";
-    a.title = "Watch this exact generation layer by layer";
-    stats.appendChild(a);
-  }
   el.appendChild(stats);
 }
 
@@ -605,7 +721,7 @@ async function openChat(id) {
     for (const c of m.tool_calls ?? []) results[c.id] = addToolCall(el, c);
     const g = genAt[i];
     if (g) addStats(el, [`${g.prompt_tokens} prompt → ${g.completion_tokens} tokens`,
-      g.duration > 0 ? `${(g.completion_tokens / g.duration).toFixed(1)} tok/s` : "", g.finish_reason], g.idx);
+      g.duration > 0 ? `${(g.completion_tokens / g.duration).toFixed(1)} tok/s` : "", g.finish_reason]);
   });
   history = full.filter((m) => m.role !== "system");
   log.scrollTop = log.scrollHeight;
@@ -627,7 +743,7 @@ async function complete(el) {
   const tools = enabledTools();
 
   const t0 = performance.now();
-  let tFirst = null, reply = "", usage = null, finish = null, xSession = null;
+  let tFirst = null, reply = "", usage = null, finish = null;
   const calls = [];
 
   try {
@@ -658,7 +774,6 @@ async function complete(el) {
         if (!data || data === "[DONE]") continue;
         const msg = JSON.parse(data);
         if (msg.usage) usage = msg.usage;
-        if (msg.x_session) xSession = msg.x_session;
         const choice = msg.choices[0];
         if (!choice) continue;
         if (choice.finish_reason) finish = choice.finish_reason;
@@ -691,7 +806,7 @@ async function complete(el) {
     usage && tFirst && genSecs > 0.2 && `${(usage.completion_tokens / genSecs).toFixed(1)} tok/s`,  // short replies can arrive in one chunk
     tFirst && `ttft ${Math.round(tFirst - t0)} ms`,
     finish,
-  ], xSession?.generation);
+  ]);
   return { reply, calls: calls.filter(Boolean), finish };
 }
 
@@ -704,6 +819,7 @@ async function send(text) {
   renderTray();
   history.push({ role: "user", content });
   addMessage("user", content);
+  syncHeader();
   controller = new AbortController();
   setBusy(true);
 
@@ -776,6 +892,9 @@ $("guideLink").onclick = (e) => { e.preventDefault(); VCDocs.open("guide"); };
 $("modelChip").onclick = () => toggleSettings(true);
 $("closeSettings").onclick = $("scrim").onclick = () => toggleSettings(false);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") toggleSettings(false); });
+document.addEventListener("keydown", (e) => {  // ⌘K / Ctrl+K: search chats
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("search").focus(); $("search").select(); }
+});
 
 (async () => {
   log.innerHTML = EMPTY;

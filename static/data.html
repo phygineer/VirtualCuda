@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VirtualCuda · Data</title>
+<style>
+  :root {
+    --bg: #0d0f12;
+    --panel: #14171c;
+    --panel-2: #1a1e25;
+    --border: #262b34;
+    --text: #e6e8eb;
+    --muted: #8a919c;
+    --faint: #4b525d;
+    --accent: #5eead4;
+    --accent-dim: #134e4a;
+    --amber: #fbbf24;
+    --danger: #f87171;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); font: 14px/1.55 var(--sans);
+    display: grid; grid-template-rows: auto auto 1fr; overflow: hidden;
+  }
+  a { color: var(--accent); }
+
+  /* ---------- navbar (shared look with the other pages) ---------- */
+  .topnav {
+    display: flex; align-items: center; gap: 18px; padding: 0 16px; height: 46px;
+    border-bottom: 1px solid var(--border); background: var(--bg);
+  }
+  .brand { font: 600 15px var(--mono); color: var(--text); text-decoration: none; letter-spacing: .02em; white-space: nowrap; }
+  .brand span { color: var(--accent); }
+  .tabs { display: flex; gap: 2px; align-self: stretch; }
+  .tabs a {
+    display: flex; align-items: center; padding: 0 12px; font: 13px var(--mono); color: var(--muted); white-space: nowrap;
+    text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs a:hover { color: var(--text); }
+  .tabs a.on { color: var(--text); border-bottom-color: var(--accent); }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .chip {
+    font: 12px var(--mono); color: var(--muted); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ---------- page header ---------- */
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 8px 16px; min-width: 0; flex-wrap: wrap;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font: 600 14px var(--sans); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  header .sub { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .opt { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .opt input[type=number] { width: 70px; }
+
+  button {
+    font: 13px var(--sans); border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); padding: 6px 12px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { border-color: var(--muted); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.small { padding: 4px 9px; font-size: 12px; }
+  button.primary { background: var(--accent); color: #042f2e; border-color: var(--accent); font-weight: 600; }
+  button.stop { background: transparent; color: var(--danger); border-color: var(--danger); }
+  button.ghost { background: transparent; }
+  .gear { font-size: 16px; line-height: 1; padding: 5px 8px; background: transparent; color: var(--muted); }
+  .gear:hover { color: var(--accent); border-color: var(--accent-dim); }
+  input[type=number], input[type=text] {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 7px; font: 12px var(--mono);
+  }
+  input[type=checkbox] { accent-color: var(--accent); }
+
+  /* ---------- layout ---------- */
+  main { display: grid; grid-template-columns: 270px 1fr; min-height: 0; }
+  aside { border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .drop {
+    margin: 12px; padding: 16px 12px; border: 1px dashed var(--faint); border-radius: 8px; text-align: center;
+    color: var(--muted); font-size: 12px; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop b { color: var(--text); font-weight: 600; display: block; font-size: 13px; margin-bottom: 2px; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: rgba(94,234,212,.05); }
+  .drop.err { border-color: var(--danger); }
+  .drop .msg { margin-top: 6px; color: var(--danger); }
+  .list { overflow: auto; flex: 1; padding: 0 8px 12px; }
+  .list h2 { font: 11px var(--mono); color: var(--faint); text-transform: uppercase; letter-spacing: .08em; margin: 4px 6px 6px; }
+  .ds { padding: 8px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+  .ds:hover { background: var(--panel-2); }
+  .ds.on { background: var(--panel-2); border-color: var(--border); }
+  .ds .nm { font: 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+  .ds .meta { font: 11px var(--mono); color: var(--muted); margin-top: 2px; }
+  .mini { height: 3px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .mini i { display: block; height: 100%; background: var(--accent); }
+  .live { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 6px var(--amber); flex: none; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+
+  section { overflow: auto; min-height: 0; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ---------- progress card ---------- */
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .bar { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; position: relative; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); transition: width .4s; }
+  .bar i.run { background: linear-gradient(90deg, var(--accent-dim), var(--accent)); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-top: 12px; }
+  .stat .k { font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .stat .v { font: 600 18px var(--mono); }
+  .stat .v small { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .grid { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 14px; }
+  .cell { width: 14px; height: 14px; border-radius: 3px; background: var(--border); cursor: pointer; }
+  .cell.done { background: var(--accent); }
+  .cell.len { background: var(--amber); }
+  .cell.cur { background: var(--text); animation: pulse .8s infinite; }
+  .cell:hover { outline: 1px solid var(--text); }
+  .legend { display: flex; gap: 14px; font: 11px var(--mono); color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+  .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+  .now { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .now .lbl { font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .now .p { font-size: 13px; color: var(--muted); max-height: 3.2em; overflow: hidden; margin: 2px 0 8px; }
+  .now .o { font-size: 13px; white-space: pre-wrap; max-height: 9em; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+  .now .o::after { content: "▍"; color: var(--accent); animation: pulse 1s infinite; }
+  .note { font: 12px var(--mono); color: var(--muted); margin-top: 10px; }
+  .train { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 6px 14px; align-items: center; }
+  .train .lbl { font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .train .bar { height: 6px; }
+  .train .bar i { background: var(--tool, #a78bfa); }
+  .train .txt { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .train .sub { grid-column: 1 / -1; font: 11px var(--mono); color: var(--faint); }
+  button.train-btn { border-color: #a78bfa; color: #c4b5fd; background: transparent; }
+  .note.err { color: var(--danger); }
+
+  /* ---------- rows table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  th { text-align: left; font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: -16px; background: var(--bg); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; overflow: hidden; }
+  tr.row { cursor: pointer; }
+  tr.row:hover td { background: var(--panel); }
+  tr.row.cur td { background: rgba(94,234,212,.06); }
+  tr.row.flash td { animation: flash 1.2s; }
+  @keyframes flash { from { background: rgba(94,234,212,.25); } }
+  td.clip { white-space: nowrap; text-overflow: ellipsis; }
+  td.num, th.num { text-align: right; font-family: var(--mono); }
+  .tag { font: 11px var(--mono); color: var(--muted); }
+  .st { font: 12px var(--mono); }
+  .st.done { color: var(--accent); }
+  .st.len { color: var(--amber); }
+  .st.wait { color: var(--faint); }
+  tr.more td { background: var(--panel); white-space: normal; }
+  .full { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .full h4 { margin: 0 0 4px; font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .full pre { margin: 0; white-space: pre-wrap; font: 12px/1.5 var(--mono); max-height: 320px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+  .ids { margin-top: 8px; font: 11px var(--mono); color: var(--faint); word-break: break-all; max-height: 4.5em; overflow: auto; }
+
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--border); max-height: 34vh; }
+    .full { grid-template-columns: 1fr; }
+    .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="/">Virtual<span>Cuda</span></a>
+  <div class="tabs">
+    <a href="/">Chat</a>
+    <a href="/sim" title="Run a prompt through the model and watch every layer">Deep dive</a>
+    <a href="/data" class="on" title="Generate the model's replies for a CSV of prompts">Data</a>
+  </div>
+  <div class="nav-right">
+    <span class="chip" id="modelChip" title="Replies are generated with the model the server has loaded">loading…</span>
+    <button class="gear" id="help" type="button" title="Supported models">?</button>
+  </div>
+</nav>
+
+<header>
+  <h1 id="dsTitle">Data generation</h1>
+  <span class="sub" id="dsMeta"></span>
+  <div class="head-right" id="actions" hidden>
+    <label class="opt" title="Most tokens generated per prompt">max tokens <input type="number" id="maxTok" min="1" max="8192" value="512"></label>
+    <label class="opt" title="0 = greedy (always the most likely token)">temp <input type="number" id="temp" min="0" max="2" step="0.1" value="0"></label>
+    <label class="opt" title="Clear every row's output and generate all of them again"><input type="checkbox" id="redo"> redo all</label>
+    <button class="primary" id="gen">Generate</button>
+    <button class="stop" id="stop" hidden>Stop</button>
+    <button class="ghost small" id="download" title="Download the CSV with outputs">⤓ CSV</button>
+    <button class="small train-btn" id="train" title="Zip of per-token activations for every generated row (builds it first if needed)">⤓ Training data</button>
+    <button class="ghost small" id="del" title="Delete this dataset">Delete</button>
+  </div>
+</header>
+
+<main>
+  <aside>
+    <div class="drop" id="drop" title="CSV with a 'prompt' column">
+      <b>Upload prompts CSV</b>
+      drop a file here or click · needs a <code>prompt</code> column
+      <div class="msg" id="dropMsg"></div>
+    </div>
+    <input type="file" id="file" accept=".csv,text/csv" hidden>
+    <div class="list" id="list"></div>
+  </aside>
+  <section id="main">
+    <div class="empty" id="emptyMsg">Upload a CSV of prompts to start.</div>
+  </section>
+</main>
+
+<script src="/static/docs.js"></script>
+<script src="/static/livereload.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const store = {
+  get(k) { try { return localStorage.getItem("vc-data-" + k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem("vc-data-" + k, v); } catch {} },
+};
+
+let datasets = [];   // summaries from /api/datasets
+let sel = store.get("sel");
+let detail = null;   // {fields, items, ...} of the selected dataset
+let job = { running: false };
+let open = new Set(); // expanded row ids
+let lastDone = -1;
+let tstat = null;          // training data status of the selected dataset
+let wantZip = false;       // download the zip once the capture job finishes
+
+function fmtTime(s) {
+  if (s == null || !isFinite(s)) return "—";
+  s = Math.round(s);
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
+  return Math.floor(s / 3600) + "h " + String(Math.floor(s / 60) % 60).padStart(2, "0") + "m";
+}
+function fmtBytes(b) { return b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(1) + " KB" : (b / 1048576).toFixed(1) + " MB"; }
+const jobHere = () => job.name === sel && job.running && job.kind !== "capture";
+const rowState = (r) => !r.output_token_ids ? "wait" : r.finish_reason === "length" ? "len" : "done";
+
+async function api(url, opts = {}) {
+  const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : res.statusText);
+  return body;
+}
+
+// ---------- dataset list ----------
+async function loadList() {
+  const d = await api("/api/datasets");
+  datasets = d.datasets;
+  job = d.job;
+  if (!datasets.some((x) => x.name === sel)) sel = job.running ? job.name : datasets[0]?.name ?? null;
+  renderList();
+}
+
+function renderList() {
+  $("list").innerHTML = datasets.length ? "<h2>Datasets</h2>" + datasets.map((d) => {
+    const live = job.running && job.name === d.name;
+    const done = live && job.kind !== "capture" ? job.done : d.done;
+    return `<div class="ds ${d.name === sel ? "on" : ""}" data-name="${esc(d.name)}">
+      <div class="nm">${live ? '<span class="live"></span>' : ""}${esc(d.name)}</div>
+      <div class="meta">${done}/${d.rows} done · ${fmtBytes(d.bytes)}</div>
+      <div class="mini"><i style="width:${d.rows ? (100 * done / d.rows) : 0}%"></i></div>
+    </div>`;
+  }).join("") : "";
+}
+
+$("list").onclick = (e) => {
+  const el = e.target.closest(".ds");
+  if (el && el.dataset.name !== sel) select(el.dataset.name);
+};
+
+async function select(name) {
+  sel = name;
+  store.set("sel", name || "");
+  open.clear();
+  lastDone = -1;
+  renderList();
+  await loadDetail();
+}
+
+// ---------- selected dataset ----------
+async function loadDetail() {
+  if (!sel) { detail = null; render(); return; }
+  try {
+    detail = await api(`/api/datasets/${encodeURIComponent(sel)}`);
+    tstat = await api(`/api/datasets/${encodeURIComponent(sel)}/training`);
+  } catch { detail = null; tstat = null; }
+  render();
+}
+
+function render() {
+  $("actions").hidden = !detail;
+  if (!detail) {
+    $("dsTitle").textContent = "Data generation";
+    $("dsMeta").textContent = "";
+    $("main").innerHTML = `<div class="empty">${datasets.length ? "Pick a dataset." : "Upload a CSV of prompts to start."}</div>`;
+    return;
+  }
+  $("dsTitle").textContent = detail.name;
+  const extra = detail.fields.filter((f) => ["source", "category", "lang"].includes(f));
+  $("main").innerHTML = `
+    <div class="card" id="prog"></div>
+    <table>
+      <colgroup><col style="width:52px"><col class="hide-sm" style="width:${extra.length ? 110 : 0}px"><col><col><col style="width:70px"><col class="hide-sm" style="width:64px"><col style="width:64px"></colgroup>
+      <thead><tr><th>#</th><th class="hide-sm">${extra.length ? "kind" : ""}</th><th>prompt</th><th>output</th><th class="num">tokens</th><th class="num hide-sm">time</th><th>status</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>`;
+  renderRows();
+  renderProgress();
+}
+
+function renderRows() {
+  const cur = jobHere() ? job.current?.id : null;
+  $("rows").innerHTML = detail.items.map((r, i) => {
+    const id = r.id || String(i + 1), s = rowState(r);
+    const kind = [r.source, r.category, r.lang && r.lang !== "en" ? r.lang : ""].filter(Boolean).join(" · ");
+    const status = id === cur ? '<span class="st">● running</span>'
+      : s === "wait" ? '<span class="st wait">pending</span>'
+      : s === "len" ? '<span class="st len" title="hit max tokens">✓ cut</span>' : '<span class="st done">✓ done</span>';
+    let html = `<tr class="row ${id === cur ? "cur" : ""}" data-id="${esc(id)}" id="r-${esc(id)}">
+      <td class="num">${esc(id)}</td><td class="clip tag hide-sm">${esc(kind)}</td>
+      <td class="clip">${esc(r.prompt)}</td><td class="clip">${esc(r.output_text)}</td>
+      <td class="num">${r.completion_tokens || ""}</td><td class="num hide-sm">${r.seconds ? (+r.seconds).toFixed(1) + "s" : ""}</td>
+      <td>${status}</td></tr>`;
+    if (open.has(id)) {
+      let ids = [];
+      try { ids = JSON.parse(r.output_token_ids || "[]"); } catch {}
+      html += `<tr class="more"><td colspan="7"><div class="full">
+        <div><h4>prompt${r.prompt_tokens ? ` · ${r.prompt_tokens} tokens with chat template` : ""}</h4><pre>${esc(r.prompt)}</pre></div>
+        <div><h4>output${r.model ? ` · ${esc(r.model)}` : ""}${r.finish_reason ? ` · ${esc(r.finish_reason)}` : ""}</h4><pre>${esc(r.output_text) || '<span class="tag">not generated yet</span>'}</pre></div>
+        </div>${ids.length ? `<div class="ids">${ids.length} token ids: ${ids.join(" ")}</div>` : ""}</td></tr>`;
+    }
+    return html;
+  }).join("");
+}
+
+$("main").addEventListener("click", (e) => {
+  const cell = e.target.closest(".cell");
+  if (cell) {
+    const id = cell.dataset.id;
+    open.add(id);
+    renderRows();
+    const tr = $("r-" + id);
+    tr?.scrollIntoView({ block: "center", behavior: "smooth" });
+    tr?.classList.add("flash");
+    return;
+  }
+  const tr = e.target.closest("tr.row");
+  if (!tr) return;
+  const id = tr.dataset.id;
+  open.has(id) ? open.delete(id) : open.add(id);
+  renderRows();
+});
+
+function renderProgress() {
+  const el = $("prog");
+  if (!el || !detail) return;
+  const here = job.name === sel && job.kind !== "capture";  // the last/current generation job was on this dataset
+  const running = here && job.running;
+  const capHere = job.name === sel && job.kind === "capture";
+  const capping = capHere && job.running;
+  const total = detail.items.length;
+  const done = running ? job.done : detail.items.filter((r) => r.output_token_ids).length;
+  const tokens = detail.items.reduce((a, r) => a + (+r.completion_tokens || 0), 0);
+  const rate = here && job.gen_seconds > 0 ? job.gen_tokens / job.gen_seconds : null;
+  const perRow = here && job.done > job.done_at_start ? job.elapsed / (job.done - job.done_at_start) : null;
+  const eta = running && perRow ? perRow * (total - done) : null;
+  const cur = running ? job.current : null;
+
+  $("dsMeta").textContent = `${done}/${total} done · ${tokens.toLocaleString()} output tokens`;
+  $("gen").hidden = running;
+  $("stop").hidden = !running && !capping;
+  $("gen").disabled = job.running && !running;  // another job is using the model
+  $("gen").textContent = done === 0 || $("redo").checked ? "Generate" : done < total ? "Resume" : "Generate";
+  $("gen").title = job.running && !running ? `Busy with ${job.name}` : "";
+  $("del").disabled = running || capping;
+  $("train").disabled = job.running || !tstat?.generated;
+  $("train").textContent = capping ? "Building…" : tstat?.ready ? `⤓ Training data · ${fmtBytes(tstat.bytes)}` : "⤓ Training data";
+
+  const cells = detail.items.map((r, i) => {
+    const id = r.id || String(i + 1), s = rowState(r);
+    const cls = cur && cur.id === id ? "cur" : s === "done" ? "done" : s === "len" ? "len" : "";
+    return `<i class="cell ${cls}" data-id="${esc(id)}" title="#${esc(id)} · ${esc(r.prompt.slice(0, 80))}"></i>`;
+  }).join("");
+
+  let note = "";
+  if (here && job.error) note = `<div class="note err">Stopped with an error: ${esc(job.error)}</div>`;
+  else if (here && !running && job.finished && job.stopped) note = `<div class="note">Stopped. Resume picks up at the first row without output.</div>`;
+  else if (here && !running && job.finished) note = `<div class="note">Finished in ${fmtTime(job.elapsed)}.</div>`;
+  else if (!running && done === total && total) note = `<div class="note">All rows have output. Token ids are saved, so every row's activations can be replayed exactly.</div>`;
+
+  el.innerHTML = `
+    <div class="bar"><i class="${running ? "run" : ""}" style="width:${total ? 100 * done / total : 0}%"></i></div>
+    <div class="stats">
+      <div class="stat"><div class="k">rows</div><div class="v">${done}<small>/${total}</small></div></div>
+      <div class="stat"><div class="k">output tokens</div><div class="v">${tokens.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">speed</div><div class="v">${rate ? rate.toFixed(1) : "—"}<small> tok/s</small></div></div>
+      <div class="stat"><div class="k">elapsed</div><div class="v">${here && job.started ? fmtTime(job.elapsed) : "—"}</div></div>
+      <div class="stat"><div class="k">eta</div><div class="v">${running ? fmtTime(eta) : "—"}</div></div>
+    </div>
+    <div class="grid">${cells}</div>
+    <div class="legend"><span style="--c:var(--border)">pending</span><span style="--c:var(--text)">running</span><span style="--c:var(--accent)">done</span><span style="--c:var(--amber)">cut at max tokens</span></div>
+    ${cur ? `<div class="now">
+      <div class="lbl">#${esc(cur.id)} · ${job.tokens} tokens</div>
+      <div class="p">${esc(cur.prompt)}</div>
+      <div class="o" id="partial">${esc(job.partial)}</div>
+    </div>` : ""}
+    ${note}
+    ${trainHtml(capHere, capping)}`;
+  const p = $("partial");
+  if (p) p.scrollTop = p.scrollHeight;
+}
+
+function trainHtml(capHere, capping) {
+  if (!tstat) return "";
+  const gen = tstat.generated, have = capping ? job.done : tstat.captured;
+  const bytes = capping ? tstat.bytes + job.bytes : tstat.bytes;
+  let sub = "per-token residual stream at every layer + attention's contribution, bf16 · one zip with data.csv and manifest.json";
+  if (capping) {
+    const per = job.done > job.done_at_start ? job.elapsed / (job.done - job.done_at_start) : null;
+    sub = `capturing #${esc(job.current?.id ?? "")} · eta ${per ? fmtTime(per * (job.total - job.done)) : "—"}`;
+  } else if (capHere && job.error) sub = `<span style="color:var(--danger)">Capture stopped with an error: ${esc(job.error)}</span>`;
+  else if (capHere && job.stopped) sub = "Capture stopped. The button picks up where it left off.";
+  else if (!gen) sub = "Generate outputs first; training data covers rows that have output.";
+  else if (gen < tstat.rows) sub = `Covers the ${gen} rows with output so far.`;
+  return `<div class="train">
+    <span class="lbl">training data</span>
+    <div class="bar"><i style="width:${gen ? 100 * have / gen : 0}%"></i></div>
+    <span class="txt">${have}/${gen} rows · ${fmtBytes(bytes)}</span>
+    <div class="sub">${sub}</div>
+  </div>`;
+}
+
+// ---------- polling ----------
+async function poll() {
+  try {
+    const was = job.running;
+    job = await api("/api/job");
+    if (job.name === sel && job.kind === "capture") {
+      if (was && !job.running) {
+        await loadDetail();
+        await loadList();
+        if (wantZip && tstat?.ready) download();
+        wantZip = false;
+      } else renderProgress();
+    } else if (job.name === sel && (job.done !== lastDone || was !== job.running)) {
+      lastDone = job.done;
+      await loadDetail();     // a row finished: pull its output into the table
+      await loadList();
+    } else {
+      renderProgress();
+      if (job.running) renderList();
+    }
+  } catch {}
+  setTimeout(poll, job.running ? 600 : 3000);
+}
+
+// ---------- actions ----------
+$("gen").onclick = async () => {
+  const redo = $("redo").checked;
+  if (redo && !confirm(`Clear all outputs in ${sel} and generate every row again?`)) return;
+  store.set("maxTok", $("maxTok").value);
+  store.set("temp", $("temp").value);
+  try {
+    job = await api(`/api/datasets/${encodeURIComponent(sel)}/generate`, {
+      method: "POST",
+      body: JSON.stringify({ max_tokens: +$("maxTok").value || 512, temperature: +$("temp").value || 0, redo }),
+    });
+    $("redo").checked = false;
+    lastDone = -1;
+    await loadDetail();
+    renderList();
+  } catch (e) { alert(e.message); }
+};
+
+$("stop").onclick = async () => {
+  $("stop").disabled = true;
+  try { job = await api("/api/job/stop", { method: "POST" }); } finally { $("stop").disabled = false; }
+  $("stop").textContent = "Stopping…";
+  setTimeout(() => ($("stop").textContent = "Stop"), 4000);
+};
+
+$("download").onclick = () => { location.href = `/api/datasets/${encodeURIComponent(sel)}/csv`; };
+
+function download() { location.href = `/api/datasets/${encodeURIComponent(sel)}/training.zip`; }
+$("train").onclick = async () => {
+  if (tstat?.ready) return download();
+  try {
+    job = await api(`/api/datasets/${encodeURIComponent(sel)}/capture`, { method: "POST" });
+    wantZip = true;
+    renderProgress();
+    renderList();
+  } catch (e) { alert(e.message); }
+};
+
+$("del").onclick = async () => {
+  if (!confirm(`Delete dataset ${sel}? Its generated outputs go with it.`)) return;
+  try {
+    await api(`/api/datasets/${encodeURIComponent(sel)}`, { method: "DELETE" });
+    sel = null;
+    await loadList();
+    await select(sel);
+  } catch (e) { alert(e.message); }
+};
+
+$("redo").onchange = renderProgress;
+
+// ---------- upload ----------
+async function upload(file) {
+  $("drop").classList.remove("err");
+  $("dropMsg").textContent = "";
+  if (!file) return;
+  try {
+    const d = await api("/api/datasets", { method: "POST", body: JSON.stringify({ filename: file.name, csv: await file.text() }) });
+    await loadList();
+    await select(d.name);
+  } catch (e) {
+    $("drop").classList.add("err");
+    $("dropMsg").textContent = e.message;
+  }
+}
+$("drop").onclick = () => $("file").click();
+$("file").onchange = () => { upload($("file").files[0]); $("file").value = ""; };
+for (const ev of ["dragenter", "dragover"]) $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); });
+for (const ev of ["dragleave", "drop"]) $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); });
+$("drop").addEventListener("drop", (e) => upload(e.dataTransfer.files[0]));
+
+$("help").onclick = () => VCDocs.open("model");
+
+// ---------- start ----------
+$("maxTok").value = store.get("maxTok") || 512;
+$("temp").value = store.get("temp") || 0;
+fetch("/api/info").then((r) => r.json()).then((i) => { $("modelChip").textContent = i.model; }).catch(() => {});
+loadList().then(() => select(sel)).then(poll);
+</script>
+</body>
+</html>
